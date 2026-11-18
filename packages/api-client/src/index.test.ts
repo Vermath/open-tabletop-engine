@@ -40,6 +40,7 @@ const weaponItemId = "weapon_client";
 const entryId = "jnl_client";
 const messageId = "msg_client";
 const macroId = "mac_client";
+const tableId = "tbl_client";
 const rollId = "roll_client";
 const audioTrackId = "aud_client";
 const combatId = "cmb_client";
@@ -59,6 +60,7 @@ const toolCallId = "tool_client";
 const inviteId = "inv_client";
 const sessionId = "sess_client";
 const requestId = "req_client";
+const partyRequestId = "party_check_client";
 const fogId = "fog_client";
 const wallId = "wall_client";
 const lightId = "light_client";
@@ -1758,6 +1760,9 @@ describe("OpenTabletopClient", () => {
         },
         "campaign-duplicate-client",
       ),
+      client.characterClaims(campaignId),
+      client.setCharacterClaimOffer(campaignId, actorId, { offered: true, expectedUpdatedAt: "2026-07-13T00:00:00.000Z" }, "character-offer-client"),
+      client.claimCharacter(campaignId, actorId, { expectedUpdatedAt: "2026-07-13T00:00:00.000Z" }, "character-claim-client"),
       client.characterTransfers(campaignId),
       client.createCharacterTransfer(
         campaignId,
@@ -1856,6 +1861,9 @@ describe("OpenTabletopClient", () => {
         "2026-07-13T00:00:00.000Z",
         "webhook-retry-client",
       ),
+      client.partyRollChoices(campaignId),
+      client.requestPartyRoll(campaignId, { rollId: "skill-perception", actorIds: [actorId] }, "party-roll-client"),
+      client.answerPartyRoll(campaignId, partyRequestId, actorId),
       client.campaignSessions(campaignId),
       client.createCampaignSession(
         campaignId,
@@ -2314,6 +2322,7 @@ describe("OpenTabletopClient", () => {
         "2026-07-13T00:00:00.000Z",
         "journal-delete-client",
       ),
+      client.presentContent(campaignId, { targetType: "handout", targetId: handoutId, expectedUpdatedAt: "2026-07-13T00:00:00.000Z", recipientUserIds: ["usr_player"] }),
       client.handouts(campaignId),
       client.createHandout(
         campaignId,
@@ -2355,6 +2364,11 @@ describe("OpenTabletopClient", () => {
       client.roll({ campaignId, formula: "1d20" }, "dice-roll-client"),
       client.rolls(campaignId),
       client.verifyRoll(campaignId, rollId),
+      client.rollableTables(campaignId),
+      client.createRollableTable(campaignId, { name: "Vault", category: "loot", visibility: "gm_only", entries: [{ text: "Ruby", weight: 2 }] }, "table-create-client"),
+      client.updateRollableTable(campaignId, tableId, { name: "Treasure", expectedUpdatedAt: "2026-07-13T00:00:00.000Z" }, "table-update-client"),
+      client.drawRollableTable(campaignId, tableId, "gm_only", "table-draw-client"),
+      client.deleteRollableTable(campaignId, tableId, "2026-07-13T00:00:00.000Z", "table-delete-client"),
       client.diceMacros(campaignId),
       client.createDiceMacro(
         campaignId,
@@ -3243,6 +3257,7 @@ function normalizeCall(call: string): string {
     .replace(entryId, "{entryId}")
     .replace(messageId, "{messageId}")
     .replace(macroId, "{macroId}")
+    .replace(tableId, "{tableId}")
     .replace(rollId, "{rollId}")
     .replace(audioTrackId, "{trackId}")
     .replace(combatId, "{combatId}")
@@ -3259,6 +3274,7 @@ function normalizeCall(call: string): string {
     .replace(campaignSessionId, "{sessionId}")
     .replace(characterTransferId, "{transferId}")
     .replace(sessionId, "{sessionId}")
+    .replace(partyRequestId, "{requestId}")
     .replace(requestId, "{captureHandle}")
     .replace(fogId, "{fogId}")
     .replace(wallId, "{wallId}")

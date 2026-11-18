@@ -160,3 +160,74 @@ test("replacing a session's linked scene clears its old start selection and star
     await deleteRecord(page, path);
   }
 });
+
+test("a scene background can be cleared and reselected when realtime precedes the save acknowledgement", async ({ page }) => {
+  await loginDemoGm(page);
+  const name = `Scene save race ${randomUUID().slice(0, 8)}`;
+  const campaign = await json(page.request.post(`${apiBaseUrl}/api/v1/campaigns`, { headers: mutationHeaders(), data: { name } }));
+  const campaignUrl = `/api/v1/campaigns/${campaign.id}`;
+  try {
+    const scene = await json(page.request.post(apiBaseUrl + campaignUrl + "/scenes", {
+      headers: mutationHeaders(), data: { expectedUpdatedAt: campaign.updatedAt, name: "Prepared map", active: true, width: 900, height: 700, gridSize: 50 },
+    }));
+    const sceneUrl = `/api/v1/scenes/${scene.id}`;
+    const assetName = "prepared-map.svg";
+    const { asset, scene: withMap } = await json<{ asset: SavedRecord; scene: SavedRecord }>(page.request.post(apiBaseUrl + campaignUrl + "/assets/upload", {
+      params: { sceneId: scene.id, setAsBackground: true, expectedSceneUpdatedAt: scene.updatedAt },
+      headers: { ...mutationHeaders(), "content-type": "image/svg+xml", "x-asset-name": assetName },
+      data: '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><rect width="300" height="300" fill="red"/></svg>',
+    }));
+    await json(page.request.post(apiBaseUrl + sceneUrl + "/tokens", {
+      headers: mutationHeaders(), data: { name: "Map anchor", x: 50, y: 50, expectedUpdatedAt: withMap.updatedAt },
+    }));
+    await page.reload();
+    await page.locator("details.campaign-switcher > summary").click();
+    await page.getByRole("navigation", { name: "Campaigns" }).getByRole("button", { name, exact: true }).click();
+    await page.getByRole("button", { name: "Manage", exact: true }).click();
+    await page.getByRole("region", { name: "Manage workspace panel" }).getByRole("button", { name: /^Scenes\b/ }).click();
+    const form = page.getByRole("form", { name: "Edit scene Prepared map" });
+    const background = form.getByRole("combobox", { name: "Edit scene background asset" });
+    const save = form.getByRole("button", { name: "Save", exact: true });
+    await expect(background).toHaveValue(asset.id);
+
+    let release!: () => void;
+    const acknowledgement = new Promise<void>((resolve) => { release = resolve; });
+    let applied!: () => void;
+    const committed = new Promise<void>((resolve) => { applied = resolve; });
+    await page.route(apiBaseUrl + sceneUrl, async (route) => {
+      if (route.request().method() !== "PATCH") return route.continue();
+      const response = await route.fetch();
+      applied();
+      await acknowledgement;
+      await route.fulfill({ response });
+    });
+    try {
+      await background.selectOption("");
+      await save.click();
+      await committed;
+      await expect(background).toBeDisabled();
+      await expect(save).toBeDisabled();
+      // Deliver the next native change as soon as the refreshed form accepts input.
+      await background.evaluate((element, nextAssetId) => {
+        const select = element as HTMLSelectElement;
+        const observer = new MutationObserver(() => {
+          if (select.matches(":disabled")) return;
+          observer.disconnect();
+          select.value = nextAssetId;
+          select.dispatchEvent(new Event("change", { bubbles: true }));
+        });
+        observer.observe(select.closest("fieldset")!, { attributes: true, attributeFilter: ["disabled"] });
+      }, asset.id);
+    } finally { release(); }
+    await expect(background).toBeEnabled();
+    await page.unroute(apiBaseUrl + sceneUrl);
+    await expect(form.locator(".scene-background-preview")).toContainText("No background");
+
+    await expect(background).toHaveValue(asset.id);
+    await save.click();
+    await page.getByRole("dialog", { name: "Place " + assetName, exact: true }).getByRole("button", { name: "Keep canvas and replace map" }).click();
+    await expect(form.locator(".scene-background-preview")).toContainText(assetName);
+    await expect(save).toBeEnabled();
+    expect(await json(page.request.get(apiBaseUrl + sceneUrl, { headers: gmHeaders }))).toMatchObject({ backgroundAssetId: asset.id });
+  } finally { await deleteRecord(page, campaignUrl); }
+});

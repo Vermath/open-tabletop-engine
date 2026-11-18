@@ -15024,6 +15024,36 @@ a:focus-visible {
   padding-top: 3px;
 }
 
+.character-claim-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.character-claim-panel h3,
+.character-claim-panel p {
+  margin: 0;
+}
+
+.claim-at-table {
+  position: absolute;
+  z-index: 12;
+  inset-block-start: 58px;
+  inset-inline-start: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: calc(100% - 24px);
+  max-height: 28vh;
+  overflow: auto;
+  justify-content: center;
+  padding: 9px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--ink);
+  box-shadow: var(--shadow-2);
+}
+
 .live-session-banner {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto auto;

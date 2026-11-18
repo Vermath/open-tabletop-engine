@@ -793,7 +793,23 @@ export interface TokenAura {
   color?: string;
 }
 
+export interface CharacterClaimOption {
+  actorId: ID;
+  name: string;
+  updatedAt: string;
+  offered: boolean;
+}
+
+export interface CharacterClaimResult {
+  actorId: ID;
+  sceneId: ID;
+  tokenId: ID;
+}
+
 export interface Actor extends Timestamps {
+  /** Explicit GM opt-in for a player character. */
+  characterClaimOffered?: boolean;
+  characterClaimOfferedByUserId?: ID;
   id: ID;
   campaignId: ID;
   worldId?: ID;
@@ -1627,6 +1643,17 @@ export interface JournalEntry extends Timestamps {
   updatedBy: ID;
 }
 
+export type PresentationTarget = { targetId: ID; expectedUpdatedAt: string } & (
+  | { targetType: "handout"; sceneId?: never; pinId?: never }
+  | { targetType: "handout" | "journal"; sceneId: ID; pinId: ID }
+);
+
+export type PresentContentRequest = PresentationTarget & { recipientUserIds: ID[] };
+
+export interface PresentationReceipt {
+  deliveredUserIds: ID[];
+}
+
 export interface Handout extends Timestamps {
   id: ID;
   campaignId: ID;
@@ -1654,12 +1681,40 @@ export interface ChatMessage extends Timestamps {
   visibility: "public" | "gm_only" | "whisper";
   recipientUserIds: ID[];
   rollId?: ID;
+  rollableTableId?: ID;
   replyToMessageId?: ID;
   moderationStatus?: ChatModerationStatus;
   moderatedByUserId?: ID;
   moderatedAt?: string;
   editedByUserId?: ID;
   editedAt?: string;
+}
+
+export interface PartyRollRecipient {
+  actorId: ID;
+  actorName: string;
+  userId: ID;
+  unavailable?: true;
+  result?: Pick<DiceRoll, "id" | "formula" | "total">;
+}
+
+export interface PartyRollRequest extends Timestamps {
+  id: ID;
+  campaignId: ID;
+  rollId: string;
+  label: string;
+  recipients: PartyRollRecipient[];
+}
+
+/** Installation-local retry identity. Never included in player or GM responses. */
+export interface StoredPartyRollRequest extends PartyRollRequest {
+  creation?: { scopedKeyHash: string; inputHash: string };
+}
+
+export interface PartyRollChoice {
+  actorId: ID;
+  actorName: string;
+  rolls: Array<{ id: string; label: string }>;
 }
 
 export interface DiceRoll extends Timestamps {
@@ -1705,6 +1760,23 @@ export interface DiceRollFairness {
   serverSeed: string;
   serverSeedHash: string;
   clientSeed?: string;
+}
+
+export interface RollableTableEntry {
+  text: string;
+  weight: number;
+}
+
+export interface RollableTableInput {
+  name: string;
+  category: "loot" | "encounter" | "rumor";
+  visibility: "public" | "gm_only";
+  entries: RollableTableEntry[];
+}
+
+export interface RollableTable extends RollableTableInput, Timestamps {
+  id: ID;
+  campaignId: ID;
 }
 
 export interface DiceMacro extends Timestamps {
@@ -3184,7 +3256,9 @@ export interface EngineState {
   handouts: Handout[];
   chat: ChatMessage[];
   rolls: DiceRoll[];
+  partyRollRequests: StoredPartyRollRequest[];
   diceMacros: DiceMacro[];
+  rollableTables: RollableTable[];
   audioTracks: AudioTrack[];
   encounters: Encounter[];
   campaignSessions: CampaignSession[];

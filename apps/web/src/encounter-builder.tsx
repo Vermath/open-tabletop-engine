@@ -4,7 +4,7 @@ import { FilePlus2, Minus, Plus, Save, Search, Swords, Trash2, X } from "lucide-
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiDelete, apiGet, apiPatch, apiPost, type EncounterPlanInfo } from "./api.js";
 import { useModalAccessibility } from "./modal-accessibility.js";
-import { errorMessage, formatNumber, titleCaseLabel } from "./sheet-format.js";
+import { errorMessage, formatNumber, recordValue, titleCaseLabel } from "./sheet-format.js";
 import { isStaleWriteError, sharedMutationIdempotencyKey, staleDraftPreservedMessage } from "./shared-mutation.js";
 
 export interface EncounterThreatInfo {
@@ -46,6 +46,32 @@ export function encounterMonsterPlacementDrafts(
     }
   }
   return placements;
+}
+
+/** Select the saved encounter's existing monsters and place only its missing combatants. */
+export async function prepareEncounterCombatants(
+  tokenIds: string[], sceneTokens: Token[], actors: Actor[], threats: EncounterBuilderThreatSelection[],
+  place: (missing: EncounterBuilderThreatSelection[]) => Promise<Token[]>,
+  stillCurrent: () => boolean,
+): Promise<Token[] | undefined> {
+  if (!stillCurrent()) return undefined;
+  const linkedIds = new Set(tokenIds);
+  const actorsById = new Map(actors.map((actor) => [actor.id, actor]));
+  const available = sceneTokens.filter((token) => linkedIds.has(token.id) && token.layer !== "map" && token.disposition === "hostile");
+  const placed: Token[] = [];
+  const missing: EncounterBuilderThreatSelection[] = [];
+  for (const threat of threats) {
+    const matches = available.filter((token) => recordValue(actorsById.get(token.actorId ?? "")?.data.monster).threatId === threat.id).slice(0, threat.count);
+    placed.push(...matches);
+    if (matches.length < threat.count) missing.push({ ...threat, count: threat.count - matches.length });
+  }
+  if (missing.length) {
+    const additions = await place(missing);
+    if (!stillCurrent()) return undefined;
+    if (additions.length !== missing.reduce((total, threat) => total + threat.count, 0)) throw new Error("Encounter placement was incomplete. Reopen the encounter to review the scene.");
+    placed.push(...additions);
+  }
+  return placed;
 }
 
 export interface EncounterCompositionInput {

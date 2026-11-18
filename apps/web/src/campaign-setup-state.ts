@@ -25,6 +25,7 @@ export interface CampaignSetupDraftInput {
   systemId: string;
   visibility: Campaign["visibility"];
   starterContent: boolean;
+  starterAdventure?: "ember-vault";
   sceneName: string;
   sceneFolder: string;
   sceneWidth: number;
@@ -150,6 +151,7 @@ function parseCampaignSetupDraft(value: unknown): CampaignSetupDraftInput | unde
   const gridTypeValid = draft.sceneGridType === "square" || draft.sceneGridType === "gridless";
   const roleValid = draft.inviteRole === "player" || draft.inviteRole === "observer" || draft.inviteRole === "assistant_gm" || draft.inviteRole === "gm";
   const routeValid = draft.route && campaignSetupSteps.includes(draft.route.step) && Array.isArray(draft.route.skipped) && draft.route.skipped.every((step) => campaignSetupSteps.includes(step));
+  if (draft.starterAdventure !== undefined && (draft.starterAdventure !== "ember-vault" || draft.systemId !== "dnd-5e-srd" || !draft.starterContent)) return undefined;
   const keysValid = !draft.idempotencyKeys || [draft.idempotencyKeys.draftKey, draft.idempotencyKeys.campaign, draft.idempotencyKeys.scene, draft.idempotencyKeys.journal, draft.idempotencyKeys.invite].every((item) => typeof item === "string");
   const progressValid = !draft.progress || (typeof draft.progress.campaignId === "string" && typeof draft.progress.onboardingCreated === "boolean" && [draft.progress.sourceCampaignId, draft.progress.sceneId, draft.progress.inviteEmail].every((item) => item === undefined || typeof item === "string") && (draft.progress.inviteRole === undefined || ["player", "observer", "assistant_gm", "gm"].includes(draft.progress.inviteRole)) && [draft.progress.inviteRequestStarted, draft.progress.inviteCreatedWithoutLink].every((item) => item === undefined || typeof item === "boolean"));
   if (![draft.name, draft.description, draft.systemId, draft.sceneName, draft.sceneFolder, draft.inviteEmail, draft.permissionTemplate, draft.onboardingTitle, draft.onboardingBody].every((item) => typeof item === "string") || !visibilityValid || typeof draft.starterContent !== "boolean" || !gridTypeValid || ![draft.sceneWidth, draft.sceneHeight, draft.sceneGridSize].every(Number.isFinite) || typeof draft.inviteEnabled !== "boolean" || !roleValid || !routeValid || !keysValid || !progressValid) return undefined;
@@ -166,6 +168,7 @@ function sanitizeCampaignSetupDraft(draft: CampaignSetupDraftInput): CampaignSet
     systemId: draft.systemId,
     visibility: draft.visibility,
     starterContent: draft.starterContent,
+    ...(draft.starterAdventure ? { starterAdventure: draft.starterAdventure } : {}),
     sceneName: draft.sceneName,
     sceneFolder: draft.sceneFolder,
     sceneWidth: draft.sceneWidth,

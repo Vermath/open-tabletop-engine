@@ -419,6 +419,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   if (path.startsWith("/api/v1/admin/") || path.startsWith("/api/v1/scim/")) return { excluded: "server_admin_or_scim" };
   if (path === "/api/v1/health" || path === "/api/v1/openapi.json") return { excluded: "public_diagnostics" };
   if (path === "/api/v1/mcp") return { excluded: "mcp_transport" };
+  if (path === "/api/v1/campaigns/{campaignId}/presentations") return { excluded: "human_live_seat_presentation" };
   if (path.startsWith("/api/v1/agent/board-captures/")) return { tools: ["capture_board_view"] };
   if (path.startsWith("/api/v1/auth/")) {
     if (method === "GET" && (path === "/api/v1/auth/session" || path === "/api/v1/auth/sessions" || path === "/api/v1/auth/mfa")) return { tools: ["read_account"] };
@@ -438,7 +439,9 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   if (path === "/api/v1/campaigns/{campaignId}/duplicate") return { excluded: "campaign_lifecycle" };
   if (path.endsWith("/scene-duplications")) return { excluded: "human_confirmed_scene_duplication" };
   if (path.includes("/archive-import-operations")) return { excluded: "human_confirmed_archive_recovery" };
+  if (path.endsWith("/character-claims") || path.endsWith("/claim-offer") || path.endsWith("/actors/{actorId}/claim")) return { excluded: "human_character_ownership_lifecycle" };
   if (path.includes("/character-transfers")) return { excluded: "human_character_ownership_lifecycle" };
+  if (path.includes("/party-roll-requests")) return { excluded: "gm_requested_player_roll" };
   if (path.endsWith("/ownership-transfer")) return { excluded: "campaign_member_admin" };
   if (path.includes("/webhooks")) return { excluded: "human_campaign_integration_admin" };
   if (path === "/api/v1/campaigns/{campaignId}/snapshot") return { excluded: "client_state_aggregation" };
@@ -492,6 +495,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   if (path.includes("/chat/messages")) return method === "GET" ? { tools: ["read_chat"] } : method === "POST" ? { tools: ["send_chat_message", "create_proposal"] } : { tools: ["create_proposal"] };
   if (path.includes("/dice/roll")) return { tools: ["roll_dice"] };
   if (path.includes("/rolls")) return { tools: ["read_roll"] };
+  if (path.includes("/rollable-tables")) return { excluded: "human_table_authoring_and_chat_draws" };
   if (path.includes("/dice-macros")) return method === "GET" ? { tools: ["read_dice_macro"] } : { tools: ["draft_dice_macro", "create_proposal"] };
   if (path.includes("/campaigns/{campaignId}/audio") || path.includes("/audio/{trackId}")) return { excluded: "audio_soundboard" };
   if (path.includes("/campaigns/{campaignId}/encounters") || path.includes("/encounters/{encounterId}")) return method === "GET" ? { tools: ["read_encounter"] } : { tools: ["draft_encounter", "create_proposal"] };
@@ -12298,6 +12302,10 @@ describe("api", () => {
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:00.000Z"
     } satisfies Scene;
+    store.state.rollableTables.push(createTimestamped("tbl", {
+      id: "tbl_auth_matrix", campaignId: "camp_demo", name: "Dice treasure", category: "loot" as const, visibility: "public" as const,
+      entries: [{ text: "Gold", weight: 1 }],
+    }));
     store.state.assets.push(authMatrixAsset);
     store.state.worlds.push(authMatrixWorld);
     store.state.handouts.push(authMatrixHandout);
@@ -12431,6 +12439,12 @@ describe("api", () => {
       { method: "POST", url: "/api/v1/campaigns/camp_demo/ownership-transfer", payload: { targetUserId: "usr_demo_player", expectedUpdatedAt: "2026-07-13T00:00:00.000Z" } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/duplicate", headers: { "idempotency-key": "auth-matrix-campaign-duplicate" }, payload: { name: "Auth Matrix Copy", expectedUpdatedAt: store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/scene-duplications", headers: { "idempotency-key": "auth-matrix-scene-duplication" }, payload: { operationId: "auth-matrix-scene-duplication", expectedUpdatedAt: "2020-01-01T00:00:00.000Z", sources: [{ sceneId: "scn_vault_entry", expectedUpdatedAt: "2020-01-01T00:00:00.000Z" }], dryRun: true } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/party-roll-requests/choices" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/party-roll-requests", headers: { "idempotency-key": "auth-matrix-party-roll" }, payload: { rollId: "skill-perception", actorIds: ["missing-party-character"] } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/party-roll-requests/missing-request/actors/act_valen/roll", payload: {} },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/character-claims" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/actors/act_valen/claim-offer", headers: { "idempotency-key": "auth-matrix-character-offer" }, payload: { offered: true, expectedUpdatedAt: "2026-05-01T00:00:00.000Z" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/actors/act_valen/claim", headers: { "idempotency-key": "auth-matrix-character-claim" }, payload: { expectedUpdatedAt: "2026-05-01T00:00:00.000Z" } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/character-transfers" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/actors/act_valen/transfers", headers: { "idempotency-key": "auth-matrix-character-transfer-create" }, payload: { toUserId: "usr_demo_player", expectedUpdatedAt: store.state.actors.find((actor) => actor.id === "act_valen")!.updatedAt } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/character-transfers/charxfer_auth_matrix_accept/accept", headers: { "idempotency-key": "auth-matrix-character-transfer-accept" }, payload: { expectedUpdatedAt: "2026-05-01T00:00:00.000Z" } },
@@ -12564,6 +12578,8 @@ describe("api", () => {
       { method: "DELETE", url: "/api/v1/journal/jnl_hook?expectedUpdatedAt=2020-01-01T00%3A00%3A00.000Z", headers: { "idempotency-key": "auth-matrix-journal-delete" } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/handouts" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/handouts", payload: { title: "No Auth Handout" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/presentations", payload: { targetType: "handout", targetId: authMatrixHandout.id,
+        expectedUpdatedAt: authMatrixHandout.updatedAt, recipientUserIds: ["usr_demo_player"] } },
       { method: "GET", url: "/api/v1/handouts/hnd_auth_matrix" },
       { method: "PATCH", url: "/api/v1/handouts/hnd_auth_matrix", payload: { title: "No Auth Handout Rename" } },
       { method: "DELETE", url: "/api/v1/handouts/hnd_auth_matrix" },
@@ -12571,6 +12587,11 @@ describe("api", () => {
       { method: "POST", url: "/api/v1/dice/roll", payload: { campaignId: "camp_demo", formula: "1d20" } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/rolls" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/rolls/roll_auth_matrix/verify" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/rollable-tables" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/rollable-tables", payload: { name: "Loot", category: "loot", visibility: "gm_only", entries: [{ text: "Gold", weight: 1 }] } },
+      { method: "PATCH", url: "/api/v1/campaigns/camp_demo/rollable-tables/tbl_auth_matrix", payload: { name: "Loot edit", expectedUpdatedAt: "2026-05-01T00:00:00.000Z" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/rollable-tables/tbl_auth_matrix/draw", payload: { visibility: "public" } },
+      { method: "DELETE", url: "/api/v1/campaigns/camp_demo/rollable-tables/tbl_auth_matrix?expectedUpdatedAt=2026-05-01T00%3A00%3A00.000Z" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/dice-macros" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/dice-macros", payload: { name: "No Auth Macro", formula: "1d4" } },
       { method: "PATCH", url: "/api/v1/dice-macros/mac_demo_attack", payload: { name: "No Auth Macro Rename" } },
@@ -12928,6 +12949,7 @@ describe("api", () => {
     const observerReadForbiddenRouteKeys = new Map<string, string>([
       ["GET /api/v1/organization/invites", "organization admin invite roster"],
       ["GET /api/v1/campaigns/{campaignId}/invites", "campaign invite roster requires campaign update"],
+      ["GET /api/v1/campaigns/{campaignId}/party-roll-requests/choices", "Only a GM can select player characters for checks"],
       ["GET /api/v1/campaigns/{campaignId}/sessions", "campaign session preparation requires campaign update"],
       ["GET /api/v1/campaigns/{campaignId}/webhooks", "campaign webhooks require campaign update"],
       ["GET /api/v1/campaigns/{campaignId}/webhooks/{webhookId}/deliveries", "campaign webhook deliveries require campaign update"],
@@ -12942,6 +12964,7 @@ describe("api", () => {
       ["GET /api/v1/scenes/{sceneId}/fog/history", "fog history requires token reveal"],
       ["GET /api/v1/journal/{entryId}/history", "journal history requires secret journal access"],
       ["GET /api/v1/campaigns/{campaignId}/dice-macros", "macro roster requires dice rolling"],
+      ["GET /api/v1/campaigns/{campaignId}/rollable-tables", "table roster requires dice rolling or campaign management"],
       ["GET /api/v1/campaigns/{campaignId}/ai/threads", "AI thread roster requires AI proposal permission"],
       ["GET /api/v1/campaigns/{campaignId}/ai/usage", "AI usage requires AI proposal permission"],
       ["GET /api/v1/campaigns/{campaignId}/ai/evaluations", "AI evaluations require AI proposal permission"],
@@ -13359,7 +13382,11 @@ describe("api", () => {
       ["POST /api/v1/scenes/{sceneId}/compendium-monster-placements", 409],
       ["POST /api/v1/scenes/{sceneId}/compendium-monster-placements/{placementId}/history", 409],
       ["POST /api/v1/scenes/{sceneId}/encounter-monster-placements", 409],
+      ["POST /api/v1/campaigns/{campaignId}/actors/{actorId}/claim-offer", 409],
+      ["POST /api/v1/campaigns/{campaignId}/actors/{actorId}/claim", 403],
       ["POST /api/v1/campaigns/{campaignId}/actors/{actorId}/transfers", 201],
+      ["POST /api/v1/campaigns/{campaignId}/party-roll-requests", 400], // The requested character does not exist.
+      ["POST /api/v1/campaigns/{campaignId}/party-roll-requests/{requestId}/actors/{actorId}/roll", 404],
       ["POST /api/v1/campaigns/{campaignId}/character-transfers/{transferId}/accept", 404],
       ["POST /api/v1/campaigns/{campaignId}/character-transfers/{transferId}/decline", 404],
       ["POST /api/v1/campaigns/{campaignId}/character-transfers/{transferId}/cancel", 404],
@@ -13446,6 +13473,7 @@ describe("api", () => {
       let revisionProperty = "expectedUpdatedAt";
 
       const campaignChild = /^\/api\/v1\/campaigns\/([^/]+)\/(?:worlds|scenes|actors|items|handouts|encounters|combats(?:\/start)?)$/.exec(pathname);
+      const rollableTableMutation = /^\/api\/v1\/campaigns\/[^/]+\/rollable-tables\/([^/]+)$/.exec(pathname);
       const campaignVersionedCreate = /^\/api\/v1\/campaigns\/([^/]+)\/(?:world-records|world-relations)$/.exec(pathname);
       const campaignMutation = /^\/api\/v1\/campaigns\/([^/]+)(?:\/(?:archive|restore))?$/.exec(pathname);
       const campaignOwnershipOrCopy = /^\/api\/v1\/campaigns\/([^/]+)\/(?:ownership-transfer|duplicate)$/.exec(pathname);
@@ -13469,6 +13497,8 @@ describe("api", () => {
       const aiToolCallMutation = /^\/api\/v1\/campaigns\/[^/]+\/ai\/tool-calls\/([^/]+)\/retry$/.exec(pathname);
 
       if (campaignChild?.[1]) revision = store.state.campaigns.find((record) => record.id === campaignChild[1])?.updatedAt;
+      else if (rollableTableMutation?.[1]) revision = store.state.rollableTables.find((record) => record.id === rollableTableMutation[1])?.updatedAt;
+      else if (pathname.endsWith("/presentations")) revision = store.state.handouts.find((record) => record.id === authMatrixHandout.id)?.updatedAt;
       else if (campaignVersionedCreate?.[1]) {
         revision = store.state.campaigns.find((record) => record.id === campaignVersionedCreate[1])?.updatedAt;
         revisionProperty = "expectedCampaignUpdatedAt";

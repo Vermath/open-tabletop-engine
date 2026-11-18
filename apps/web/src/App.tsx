@@ -1,3 +1,6 @@
+import { SceneSettingsForm } from "./scene-settings-form.js";
+import type { CharacterClaimOption } from "@open-tabletop/api-contracts";
+import { CharacterClaimPanel, submitCharacterChoice } from "./character-claim-panel.js";
 import { tokenRestorePayload } from "./token-restore.js";
 import { compendiumPlacementActions, type BoardAction, type PlacementAttempts } from "./compendium-placement-client.js";
 import { EmptyState, WorkspaceLoading, canCommitSceneSwitch, preloadWorkspaceScene, retrySceneSwitch } from "./workspace-states.js";
@@ -41,7 +44,8 @@ import { boardCaptureRequestDecision, createRealtimeHandlers, workspaceSelection
 import { createVisionReconciliation } from "./vision-reconciliation.js";
 import { loadRealtimeWorkspaceChanges } from "./realtime-workspace-load.js";
 import { changesRealtimeRecord, removeRealtimeRecord, sameSnapshotValue, upsertBoundedRealtimeRecord, upsertNewestPrependedRealtimeRecord, upsertNewestRealtimeRecord, upsertNewestRealtimeRecords, upsertRealtimeRecord } from "./realtime-snapshot-delta.js";
-import { applyPresenceEnvelope, realtimeSequenceDecision } from "./realtime-sequence.js";
+import { usePlayerPresentation } from "./presentation.js";
+import { applyPresenceEnvelope, parseRealtimePayload, realtimeSequenceDecision } from "./realtime-sequence.js";
 import { settleWorkspaceLoreLoad } from "./workspace-lore-load.js";
 import { settleWorkspaceBoundAction, type WorkspaceBoundRequest, type WorkspaceRequestIdentity } from "./workspace-bound-action.js";
 import { templateConePoints } from "./scene-annotations.js";
@@ -77,6 +81,7 @@ import { cleanupAdminStoredAssets, migrateAdminStoredAssets, purgeAdminAssetCdnC
 import { failStaleAdminAiThreads, failStaleAdminAiToolCalls, rejectStaleAdminAiProposals, retryAdminAiToolCall as requestRetryAdminAiToolCall } from "./admin-ai-client.js";
 import { issueAdminPasswordReset as requestAdminPasswordReset, pruneExpiredPasswordResets as requestPruneExpiredPasswordResets, retryAdminEmail as requestRetryAdminEmail, retryAllAdminEmails as requestRetryAllAdminEmails, revokeAdminRiskSessions as requestRevokeAdminRiskSessions, revokeAdminSession as requestRevokeAdminSession, revokeAdminUserSessions as requestRevokeAdminUserSessions, updateAdminUser } from "./admin-identity-client.js";
 import { syncAdminPluginRegistry, syncCampaignPluginRegistry, updateAdminPluginReview } from "./admin-plugin-client.js";
+import { submitTableMutation, type TableMutation } from "./rollable-table-actions.js";
 import { PersonalHotbar } from "./personal-hotbar.js";
 import { hotbarStoragePrefix } from "./personal-hotbar-state.js";
 import { prepareDeclarativeRoll, rollDeclarativeActor } from "./declarative-system-client.js";
@@ -88,12 +93,12 @@ import { assetMatchesFolderFilter, campaignArchiveTargetId, contentImportEntityD
 import { ArchiveImportRecovery, recoverDeletedArchiveImportWorkspace } from "./archive-import-recovery.js";
 import { downloadCampaignArchiveStream, isArchiveTransferAbort, isCampaignArchiveStreamFile, readCampaignArchiveStreamMetadata, uploadCampaignArchiveStream } from "./archive-stream-client.js";
 import { ArchiveTransferProgress, archiveTransferIsBusy, type ArchiveTransferState } from "./archive-transfer-progress.js";
-import { archiveExportCollectionOptions, archiveExportMinimumRecordCount, type ArchiveExportCollection, type ArchiveExportScope } from "./archive-export-estimate.js";
+import type { ArchiveExportCollection, ArchiveExportScope } from "./archive-export-estimate.js";
 import { systemAdvancementOptionId, systemEncounterThreatId, systemRollId } from "./system-actions.js";
 import type { CharacterCreateInput, CharacterCreatorRulesPreview, CharacterOriginsInfo } from "./character-creator-dialog.js";
 import { CharacterImportDialog, type CharacterImportOutcome } from "./character-import-dialog.js";
 import type { CharacterImportPayload } from "./character-import.js";
-import { EncounterBuilderDialog, encounterMonsterPlacementDrafts, type EncounterBuilderThreatSelection } from "./encounter-builder.js";
+import { EncounterBuilderDialog, encounterMonsterPlacementDrafts, prepareEncounterCombatants, type EncounterBuilderThreatSelection } from "./encounter-builder.js";
 import { CombatSetupDialog } from "./combat-setup-dialog.js";
 import type { CombatSetupSubmission } from "./combat-setup.js";
 import { canonicalSceneIdForWorldFilter, selectedSceneForWorldFilter, WorldAtlasPanel, worldFilterMatchesScene, type LoreCollectionLoadState, type WorldAtlasFilter, type WorldAtlasWorld } from "./world-atlas-panel.js";
@@ -104,7 +109,9 @@ import { TypedDamageCard, type TypedDamageApplyResult } from "./typed-damage-car
 import { ActorLoadoutPanel, filterActorLoadoutItems, type ActorLoadoutFilter } from "./actor-loadout-panel.js";
 import { TacticalMapAids, coverLevelLabel, sceneCoverOverrideBetween } from "./tactical-map-aids.js";
 import { CalculationExplanationPanel } from "./calculation-explanation-panel.js";
-import { DeferredPanel, LazyActorPanel as ActorPanel, LazyAdminPanel, LazyAdvancementFlow, LazyAiPanel, LazyCampaignMemoryPanel, LazyCampaignWebhooksPanel, LazyCharacterCreatorDialog, LazyCompatibilityPanel, LazyCompendiumPanel, LazyContentImportPanel, LazyControlledCreaturesPanel, LazyDndCharacterReviewPanel, LazyDndCustomContentPanel, LazyDndInventoryCommercePanel, LazySdkPanel } from "./deferred-panels.js";
+import { DeferredPanel, LazyArchiveExportWizard, LazyArchiveImportWizard, LazyPartyRollPanel, LazyActorPanel as ActorPanel, LazyAdminPanel, LazyAdvancementFlow, LazyAiPanel, LazyCampaignMemoryPanel, LazyCampaignWebhooksPanel, LazyCharacterCreatorDialog, LazyCompatibilityPanel, LazyCompendiumPanel, LazyContentImportPanel, LazyControlledCreaturesPanel, LazyDndCharacterReviewPanel, LazyDndCustomContentPanel, LazyDndInventoryCommercePanel, LazySdkPanel } from "./deferred-panels.js";
+
+import type { PartyRollRequest } from "@open-tabletop/api-contracts";
 import { LiveSessionBanner, SessionDeskPanel, sessionReportAllowed } from "./session-desk-panel.js";
 import { sessionRecapJournalPayload } from "./session-recap.js";
 import { useModalAccessibility } from "./modal-accessibility.js";
@@ -249,23 +256,6 @@ function aiAgentProviderMessages(messages: AiAgentMessage[]): Array<{ role: "use
 function isAiAgentClearCommand(prompt: string): boolean {
   return /^\/clear(?:\s+.*)?$/i.test(prompt.trim());
 }
-
-const archiveImportCollectionOptions: Array<{ id: ArchiveImportCollection; label: string }> = [
-  { id: "assets", label: "Assets" },
-  { id: "scenes", label: "Scenes" },
-  { id: "tokens", label: "Tokens" },
-  { id: "actors", label: "Actors" },
-  { id: "items", label: "Items" },
-  { id: "journals", label: "Journals" },
-  { id: "handouts", label: "Handouts" },
-  { id: "chat", label: "Chat" },
-  { id: "rolls", label: "Rolls" },
-  { id: "diceMacros", label: "Dice macros" },
-  { id: "encounters", label: "Encounters" },
-  { id: "combats", label: "Combats" },
-  { id: "contentImports", label: "Import batches" },
-  { id: "fogPresets", label: "Fog presets" }
-];
 
 function initialAiAgentPanelSize(): FloatingPanelSize {
   return {
@@ -520,6 +510,7 @@ export function App() {
   const [encounterBuilderOpen, setEncounterBuilderOpen] = useState(false);
   const [campaignSearchFocus, setCampaignSearchFocus] = useState<CampaignSearchResult>();
   const [combatSetupOpen, setCombatSetupOpen] = useState(false);
+  const combatSetupEncounterRef = useRef<string | undefined>(undefined);
   const [characterImportOpen, setCharacterImportOpen] = useState(false);
   const [universalVttImportOpen, setUniversalVttImportOpen] = useState(false);
   const [importedActor, setImportedActor] = useState<Actor>();
@@ -563,7 +554,7 @@ export function App() {
   const [canvasAssetSearch, setCanvasAssetSearch] = useState("");
   const [canvasAssetPlacementCount, setCanvasAssetPlacementCount] = useState(1);
   const [campaignSetupForm, setCampaignSetupForm] = useState<Omit<CampaignSetupDraftInput, "idempotencyKeys" | "progress">>(() => defaultCampaignSetupDraft());
-  const { name: newCampaignName, description: newCampaignDescription, systemId: newCampaignSystemId, visibility: newCampaignVisibility, starterContent: setupStarterContent, sceneName: setupSceneName, sceneFolder: setupSceneFolder, sceneWidth: setupSceneWidth, sceneHeight: setupSceneHeight, sceneGridType: setupSceneGridType, sceneGridSize: setupSceneGridSize } = campaignSetupForm;
+  const { name: newCampaignName, description: newCampaignDescription, systemId: newCampaignSystemId, visibility: newCampaignVisibility, starterContent: setupStarterContent, starterAdventure: setupStarterAdventure, sceneName: setupSceneName, sceneFolder: setupSceneFolder, sceneWidth: setupSceneWidth, sceneHeight: setupSceneHeight, sceneGridType: setupSceneGridType, sceneGridSize: setupSceneGridSize } = campaignSetupForm;
   const { inviteEnabled: setupInviteEnabled, inviteEmail: setupInviteEmail, inviteRole: setupInviteRole, permissionTemplate: setupPermissionTemplate, onboardingTitle: setupOnboardingTitle, onboardingBody: setupOnboardingBody, route: campaignSetupRoute } = campaignSetupForm;
   const [isCreatingCampaignSetup, setIsCreatingCampaignSetup] = useState(false);
   const [campaignSetupRecoveryPending, setCampaignSetupRecoveryPending] = useState(false);
@@ -673,6 +664,8 @@ export function App() {
   const campaignSetupDraftScope = useMemo(() => activeOrganizationId && currentUserId ? { organizationId: activeOrganizationId, userId: currentUserId, campaignId: campaignId || "new" } satisfies CampaignSetupDraftScope : undefined, [activeOrganizationId, campaignId, currentUserId]);
   const campaignSetupDraftKey = campaignSetupDraftScope ? campaignSetupDraftStorageKey(campaignSetupDraftScope) : "";
   const currentMember = snapshot.members.find((member) => member.user.id === currentUserId);
+  const canManagePartyRolls = Boolean(currentMember && ["owner", "gm", "assistant_gm"].includes(currentMember.role) && currentMember.permissions.includes("combat.manage"));
+  const playerPresentation = usePlayerPresentation(snapshot, campaignId, currentUserId, sessionTransportEpoch, realtimeConnectionKey);
   const hasPermission = (permission: PermissionName) => currentMember?.permissions.includes(permission) ?? false;
   const orderedScenes = [...snapshot.scenes].sort(compareScenesForDisplay);
   const accessibleScenes = hasPermission("scene.update") ? orderedScenes : orderedScenes.filter((scene) => scene.active);
@@ -741,17 +734,6 @@ export function App() {
   const nextTurnTokenIds = useMemo(() => nextTurnCombatant?.tokenId && nextTurnCombatant.id !== currentTurnCombatant?.id ? [nextTurnCombatant.tokenId] : [], [nextTurnCombatant?.tokenId, nextTurnCombatant?.id, currentTurnCombatant?.id]);
   const recentEndedCombats = snapshot.combats.filter((combat) => !combat.active).sort((left, right) => right.updatedAt.localeCompare(left.updatedAt)).slice(0, 3);
   const selectedPermissionTemplate = campaignPermissionTemplates.find((template) => template.id === setupPermissionTemplate) ?? campaignPermissionTemplates[0]!;
-  const archiveExportRecordCount = archiveExportMinimumRecordCount({ campaignId, scope: archiveExportScope, worldId: archiveExportWorldId, collections: archiveExportCollections, snapshot, worlds, handouts });
-  const archiveCompatibilityNotes = [
-    archiveExportScope === "campaign"
-      ? "Exports the selected campaign and all related portable tabletop records."
-      : archiveExportScope === "world"
-        ? "Exports one world with dependency-closed scenes, actors, content, assets, sessions, and audit records."
-        : "Exports the campaign identity shell plus the selected record collections and referenced dependency records; dependency warnings are embedded in the archive.",
-    "The displayed count is a conservative minimum because the server can include dependencies and history unavailable in the browser snapshot.",
-    "Archive 0.2.0 is accepted by the current v0.3/v1-compatible importer.",
-    "Portable redaction strips account secrets, sessions, MFA, SCIM sources, plugin reviews, idempotency records, jobs, and organization records while preserving playable content."
-  ];
   const chatRecipientOptions = snapshot.members.filter((member) => member.user.id !== currentUserId);
   const chatReplyTarget = snapshot.chat.find((message) => message.id === chatReplyToMessageId);
   const campaignDeleteImpact = selectedCampaign
@@ -1372,13 +1354,17 @@ export function App() {
     if (options.sceneWorldId) setSelectedWorldId(options.sceneWorldId);
     // Selection belongs to the user, not the snapshot: keep it as long as the
     // tokens still exist, auto-select only on the very first load.
-    const firstLoadToken = !snapshotReady && scene ? next.tokens.find((item) => item.sceneId === scene.id) : undefined;
+    const playerEntering = !snapshotReady && next.members.some((member) => member.user.id === requestUserId && member.role === "player");
+    const ownedCharacter = playerEntering ? next.tokens.find((item) => item.sceneId === resolvedSceneId && !item.hidden && (item.layer ?? "player") === "player" && next.actors.some((actor) => actor.id === item.actorId && actor.type === "character" && actor.ownerUserId === requestUserId)) : undefined;
+    const firstLoadToken = !snapshotReady && scene ? ownedCharacter ?? next.tokens.find((item) => item.sceneId === scene.id) : undefined;
+    if (ownedCharacter) setSelectedActorId(ownedCharacter.actorId ?? "");
     setSelectedTokenIds((current) => {
+      if (ownedCharacter) return [ownedCharacter.id];
       const valid = current.filter((id) => next.tokens.some((item) => item.id === id));
       if (valid.length > 0) return valid.length === current.length ? current : valid;
       return firstLoadToken ? [firstLoadToken.id] : valid;
     });
-    setSelectedTokenIdState((current) => (current && next.tokens.some((item) => item.id === current) ? current : firstLoadToken?.id ?? ""));
+    setSelectedTokenIdState((current) => ownedCharacter?.id ?? (current && next.tokens.some((item) => item.id === current) ? current : firstLoadToken?.id ?? ""));
     setSnapshotReady(true);
     if (options.syncStatus !== false) setStatus("Synced");
     return next;
@@ -1687,6 +1673,11 @@ export function App() {
     if (event.type.startsWith("world.") || event.type.startsWith("handout.")) {
       loreRealtimeRefreshPendingRef.current = true;
       return "lore";
+    }
+    if (event.type === "partyRoll.updated" && payload && typeof payload.id === "string" && Array.isArray(payload.recipients)) {
+      invalidateInFlightRefreshes();
+      setSnapshot((current) => ({ ...current, partyRollRequests: upsertNewestRealtimeRecord(current.partyRollRequests ?? [], payload as unknown as PartyRollRequest) }));
+      return "applied";
     }
     if (applyAiAgentRealtimeEvent(event)) return "applied";
     if ((event.type === "actor.created" || event.type === "actor.updated") && payload && payload.redacted !== true && typeof payload.id === "string" && payload.data && typeof payload.data === "object") {
@@ -2082,8 +2073,9 @@ export function App() {
       campaignId,
       sessionToken,
       activeSceneId: () => realtimeSelectionRef.current.sceneId || undefined,
-      onOpen: ({ reconnected }) => {
+      onOpen: ({ reconnected, dismissPresentation: dismiss }) => {
         if (cancelled) return;
+        playerPresentation.connect(dismiss);
         clearResyncRetry();
         const generation = ++resyncGeneration;
         if (!reconnected) {
@@ -2100,13 +2092,16 @@ export function App() {
       },
       onMessage: (data) => {
         if (cancelled) return;
-        if (applyPresenceMessage(data)) return;
-        if (resyncing) queuedMessages.push(data);
-        else dispatchDomainMessage(data, true);
+        const message = parseRealtimePayload(data);
+        if (playerPresentation.receive(message)) return;
+        if (applyPresenceMessage(message)) return;
+        if (resyncing) queuedMessages.push(message);
+        else dispatchDomainMessage(message, true);
       },
       onUnavailable: () => {
         if (cancelled) return;
         setRealtimeUiState("reconnecting");
+        playerPresentation.disconnect();
         resyncGeneration += 1;
         resyncing = false;
         queuedMessages.length = 0;
@@ -2119,6 +2114,7 @@ export function App() {
       resyncGeneration += 1;
       clearResyncRetry();
       queuedMessages.length = 0;
+      playerPresentation.disconnect();
       realtimeHandlers.dispose();
       stopRealtime();
     };
@@ -2529,7 +2525,8 @@ export function App() {
     setNewSceneVisibilityMode("fog");
   }, [selectedCampaign?.id]);
 
-  useEffect(() => {
+  // Hydrate clean fields before the browser can deliver another edit.
+  useLayoutEffect(() => {
     if (!selectedScene) return;
     if (sceneEditDirty) return;
     setSceneEditName(selectedScene.name);
@@ -3040,6 +3037,20 @@ export function App() {
     setStatus("Invite revoked");
   }
 
+  async function chooseCharacter(option: CharacterClaimOption, idempotencyKey: string, managing: boolean) {
+    await runWorkspaceBoundAction((request) => submitCharacterChoice(request.campaignId, option, managing, idempotencyKey, request.controller.signal), async (claim, request) => {
+      const next = await refresh(request.campaignId, claim?.sceneId ?? realtimeSelectionRef.current.sceneId, { syncStatus: false, selectSceneOnLoad: claim ? () => workspaceBoundRequestIsCurrent(request) : undefined });
+      if (!workspaceBoundRequestIsCurrent(request)) return;
+      if (claim && next.tokens.some((token) => token.id === claim.tokenId && token.actorId === claim.actorId && token.ownerUserIds?.includes(request.userId))) {
+        setActiveTokenLayer("player");
+        selectSingleToken(claim.tokenId, claim.actorId);
+        resetWorkspaceNavigation("live", "actors");
+        setInspectorOpen(true);
+        setStatus(`Joined the table as ${option.name}`);
+      } else if (!claim) setStatus(`${option.name} ${option.offered ? "withdrawn" : "offered to players"}`);
+    });
+  }
+
   async function acceptInvite() {
     if (inviteAcceptBusyRef.current) return;
     cancelInviteAcceptance();
@@ -3091,7 +3102,7 @@ export function App() {
         setStatus("Invite accepted");
       });
       if (!committed) return;
-      await refresh(result.campaign.id);
+      await refresh(result.campaign.id, "");
     } finally {
       if (inviteAcceptAbortRef.current === controller) inviteAcceptAbortRef.current = null;
       if (requestSequence === inviteAcceptSequenceRef.current) {
@@ -3121,6 +3132,7 @@ export function App() {
       visibility: newCampaignVisibility,
       permissionTemplate: setupPermissionTemplate,
       starterContent: setupStarterContent,
+      ...(setupStarterAdventure ? { starterAdventure: setupStarterAdventure } : {}),
       sceneName,
       sceneFolder: setupSceneFolder.trim(),
       sceneWidth: Math.max(200, setupSceneWidth),
@@ -3150,7 +3162,8 @@ export function App() {
           defaultSystemId: newCampaignSystemId,
           visibility: newCampaignVisibility,
           permissionTemplate: setupPermissionTemplate,
-          starterContent: setupStarterContent
+          starterContent: setupStarterContent,
+          ...(setupStarterAdventure ? { starterAdventure: setupStarterAdventure } : {})
         }, { signal: controller.signal, idempotencyKey: setupIdempotencyKeys.campaign });
         if (!setupRequestIsCurrent()) return;
         progress = { key: progressKey, organizationId: activeOrganizationId, userId: currentUserId, campaign, draftScopeCampaignId: currentCampaignSetupDraftScope()?.campaignId, onboardingCreated: setupStarterContent };
@@ -3246,6 +3259,8 @@ export function App() {
       if (hasSetupInvite) {
         setManageCategory("people");
         setWorkspaceMode("manage");
+      } else if (setupStarterAdventure) {
+        resetWorkspaceNavigation("live", "combat");
       } else {
         resetWorkspaceNavigation("prep", setupStarterContent ? "sessions" : "content");
       }
@@ -3260,8 +3275,8 @@ export function App() {
         ? `${campaign.name} created${createdWith}; invite exists but its one-time link could not be recovered - revoke it and create a new invite${permissionSummary}`
         : setupInvite
           ? `${campaign.name} created${createdWith}; invite link ready to copy${permissionSummary}`
-          : `${campaign.name} created${createdWith}; opened session prep${permissionSummary}`);
-      if (!setupInvite) window.requestAnimationFrame(() => workspaceModeButtonRefs.current[hasSetupInvite ? "manage" : "prep"]?.focus());
+          : `${campaign.name} created${createdWith}; opened ${setupStarterAdventure ? "live table" : "session prep"}${permissionSummary}`);
+      if (!setupInvite) window.requestAnimationFrame(() => workspaceModeButtonRefs.current[hasSetupInvite ? "manage" : setupStarterAdventure ? "live" : "prep"]?.focus());
     } catch (error) {
       if (isAbortError(error)) return;
       throw error;
@@ -5131,12 +5146,12 @@ export function App() {
     setBattleMapZoom(1);
   }
 
-  function selectSingleToken(tokenId: string) {
+  function selectSingleToken(tokenId: string, actorId = snapshot.tokens.find((token) => token.id === tokenId)?.actorId ?? "") {
     if (tokenId && !shortPhone) setInspectorOpen(true);
     setSelectedBoardAssetId("");
     setSelectedTokenIdState(tokenId);
     setSelectedTokenIds(tokenId ? [tokenId] : []);
-    setSelectedActorId(snapshot.tokens.find((token) => token.id === tokenId)?.actorId ?? "");
+    setSelectedActorId(actorId);
   }
 
   function selectActor(actorId: string) {
@@ -6094,6 +6109,14 @@ export function App() {
     diceRevealTimersRef.current.set(cast.rollId, timerId);
   }
 
+  function mutateRollableTable(mutation: TableMutation) {
+    if (!workspaceRequestIsCurrent(campaignId, currentUserId)) return Promise.reject(new Error("The active campaign or account changed. Reopen the table."));
+    return runWorkspaceBoundAction(
+      (request) => submitTableMutation(request, mutation, beginAppendMutation, completeAppendMutation),
+      (update) => { invalidateInFlightRefreshes(); setSnapshot(update); },
+    );
+  }
+
   async function rollDice(formulaOverride?: string) {
     const formula = typeof formulaOverride === "string" && formulaOverride.trim() ? formulaOverride.trim() : diceFormula;
     if (blankCanvasDemoOpen) {
@@ -6600,6 +6623,7 @@ export function App() {
       return;
     }
     selectInspectorTab("combat");
+    combatSetupEncounterRef.current = undefined;
     setCombatSetupOpen(true);
   }
 
@@ -6627,6 +6651,7 @@ export function App() {
     if (!campaign) throw new Error("Campaign changed while combat setup was open. Review and retry.");
     const combatPayload = {
       sceneId: requestSceneId,
+      ...(combatSetupEncounterRef.current ? { encounterId: combatSetupEncounterRef.current } : {}),
       participants,
       manualTurnOrder: input.manualTurnOrder,
       expectedUpdatedAt: campaign.updatedAt
@@ -8147,12 +8172,20 @@ export function App() {
       const missingNames = missingPartyActorIds.map((actorId) => snapshot.actors.find((actor) => actor.id === actorId)?.name ?? actorId);
       throw new Error(`Place selected party tokens before combat review: ${missingNames.join(", ")}.`);
     }
-    const placedTokens = await createEncounterThreatTokens(encounterId, threats, signal, attemptId);
+    const encounter = snapshot.encounters.find((entry) => entry.id === encounterId);
+    if (!encounter) throw new Error("Reopen the encounter from the current campaign before launching combat.");
+    const request = currentWorkspaceRequestIdentity();
+    const sceneId = selectedScene.id;
+    const stillCurrent = () => !signal.aborted && workspaceIdentityIsCurrent(request) && realtimeSelectionRef.current.sceneId === sceneId;
+    const placedTokens = await prepareEncounterCombatants(encounter.tokenIds, selectedSceneTokens, snapshot.actors, threats,
+      (missing) => createEncounterThreatTokens(encounterId, missing, signal, attemptId), stillCurrent);
+    if (!placedTokens || !stillCurrent()) return;
     if (placedTokens.length === 0) throw new Error("No encounter combatants were placed.");
     const tokenIds = [...new Set([...partyTokens.flatMap((token) => token ? [token.id] : []), ...placedTokens.map((token) => token.id)])];
     selectCanvasTokens(tokenIds);
     setEncounterBuilderOpen(false);
     selectInspectorTab("combat");
+    combatSetupEncounterRef.current = encounterId;
     setCombatSetupOpen(true);
     setStatus(`Prepared ${formatNumber(tokenIds.length)} combatants (${formatNumber(partyTokens.length)} party, ${formatNumber(placedTokens.length)} hostile); review initiative to start.`);
   }
@@ -9059,6 +9092,7 @@ export function App() {
     <>
     {consequenceReview.dialog}
     {sceneMapPreparation.dialog}
+    {playerPresentation.dialog}
     <RetryableActionNotice
       operation={campaignAction.operation}
       onRetry={campaignAction.retryAction ? () => void campaignAction.retryAction?.() : undefined}
@@ -9483,6 +9517,7 @@ export function App() {
             )}
             {activeManageCategory === "people" && (
               <div className="manage-card-grid">
+        {currentMember && ["owner", "gm", "assistant_gm"].includes(currentMember.role) && hasPermission("actor.update") && hasPermission("token.update") && <CharacterClaimPanel key={campaignId + currentUserId} campaignId={campaignId} managing snapshot={snapshot} onChoose={(option, key) => chooseCharacter(option, key, true)} />}
         <CharacterTransferPanel
           campaignId={campaignId}
           currentUserId={currentUserId}
@@ -9682,14 +9717,7 @@ export function App() {
           </details>
         )}
         {selectedScene && hasPermission("scene.update") && (
-          <form
-            className="account-box"
-            aria-label={`Edit scene ${selectedScene.name}`}
-            onSubmit={(event) => {
-              event.preventDefault();
-              saveSceneSettings(event.currentTarget).catch((error) => reportError(error));
-            }}
-          >
+          <SceneSettingsForm sceneName={selectedScene.name} onSave={saveSceneSettings} onError={reportError}>
             <div className="section-title">Scene Manager</div>
             <div className="scene-background-preview">
               {selectedMapAsset ? <img src={assetThumbnailUrl(selectedMapAsset)} alt="" /> : <FileText size={24} />}
@@ -9891,7 +9919,7 @@ export function App() {
                 </button>
               </div>
             )}
-          </form>
+          </SceneSettingsForm>
         )}
         {selectedScene && hasPermission("scene.update") && (
           <SceneDelegationPanel
@@ -9928,190 +9956,62 @@ export function App() {
             )}
             {activeManageCategory === "archives" && (
               <div className="manage-card-grid">
-        <section className="account-box" aria-label="Archive export wizard">
-          <div className="section-title">Archive Export</div>
-          <select aria-label="Archive export scope" value={archiveExportScope} onChange={(event) => { const scope = event.target.value as ArchiveExportScope; setArchiveExportScope(scope); if (scope === "world" && !archiveExportWorldId) setArchiveExportWorldId(worlds[0]?.id ?? ""); }}>
-            <option value="campaign">Current campaign</option>
-            <option value="world">One world</option>
-            <option value="selected_collections">Selected record collections</option>
-          </select>
-          {archiveExportScope === "world" && (
-            <label>
-              <span>World</span>
-              <select aria-label="Archive export world" value={archiveExportWorldId} onChange={(event) => setArchiveExportWorldId(event.target.value)}>
-                <option value="">Select a world</option>
-                {worlds.map((world) => <option key={world.id} value={world.id}>{world.name}</option>)}
-              </select>
-            </label>
-          )}
-          {archiveExportScope === "selected_collections" && (
-            <div className="asset-pressure-list archive-export-collections" aria-label="Archive export collection selection">
-              {archiveExportCollectionOptions.map((option) => (
-                <label className="operator-row tool-call-row" key={option.id}>
-                  <span>{option.label}</span>
-                  <input
-                    type="checkbox"
-                    aria-label={`Export ${option.label}`}
-                    checked={archiveExportCollections.includes(option.id)}
-                    onChange={(event) => updateArchiveExportCollection(option.id, event.target.checked)}
+                <DeferredPanel label="campaign archives">
+                  <LazyArchiveExportWizard
+                    campaignId={campaignId}
+                    snapshot={snapshot}
+                    worlds={worlds}
+                    handouts={handouts}
+                    scope={archiveExportScope}
+                    worldId={archiveExportWorldId}
+                    collections={archiveExportCollections}
+                    version={archiveExportVersion}
+                    redaction={archiveRedactionMode}
+                    status={archiveExportStatus}
+                    busy={archiveTransferBusy}
+                    onScopeChange={setArchiveExportScope}
+                    onWorldChange={setArchiveExportWorldId}
+                    onCollectionChange={updateArchiveExportCollection}
+                    onVersionChange={setArchiveExportVersion}
+                    onRedactionChange={setArchiveRedactionMode}
+                    onStreamExport={() => void exportCampaignStream().catch((error) => setArchiveExportStatus(error instanceof Error ? error.message : String(error)))}
+                    onJsonExport={() => void exportCampaignJson().catch((error) => setArchiveExportStatus(error instanceof Error ? error.message : String(error)))}
                   />
-                </label>
-              ))}
-            </div>
-          )}
-          <select aria-label="Archive export version" value={archiveExportVersion} onChange={(event) => setArchiveExportVersion(event.target.value as ArchiveExportVersion)}>
-            <option value="0.2.0">Archive 0.2.0</option>
-          </select>
-          <select aria-label="Archive redaction mode" value={archiveRedactionMode} onChange={(event) => setArchiveRedactionMode(event.target.value as ArchiveRedactionMode)}>
-            <option value="portable">Portable table archive</option>
-          </select>
-          <div className="asset-pressure-list" aria-label="Archive compatibility notes">
-            <div className="operator-row tool-call-row">
-              <span>Scope</span>
-              <strong>{archiveExportRecordCount === undefined ? "Select a world to estimate" : `At least ${formatNumber(archiveExportRecordCount)} records`}</strong>
-            </div>
-            {archiveCompatibilityNotes.map((note) => (
-              <div className="operator-row tool-call-row" key={note}>
-                <span>Note</span>
-                <strong>{note}</strong>
-              </div>
-            ))}
-          </div>
-          <p className="account-summary">{archiveExportStatus}</p>
-          <button className="ghost-button wide" type="button" disabled={archiveTransferBusy || (archiveExportScope === "world" && !archiveExportWorldId)} onClick={() => exportCampaignStream().catch((error) => setArchiveExportStatus(error instanceof Error ? error.message : String(error)))} title="Stream a large .ottx archive directly to disk">
-            <Download size={16} /> Export Large Archive (.ottx)
-          </button>
-          <button className="ghost-button wide" type="button" disabled={archiveTransferBusy || (archiveExportScope === "world" && !archiveExportWorldId)} onClick={() => exportCampaignJson().catch((error) => setArchiveExportStatus(error instanceof Error ? error.message : String(error)))} title="Materialize a legacy JSON archive for small campaigns and older tooling">
-            <Download size={16} /> Export JSON (small archives)
-          </button>
-        </section>
-        <button className="ghost-button" onClick={() => exportDogfoodReportBundle().catch((error) => reportError(error))} title="Download a redacted issue report bundle">
-          <Download size={16} /> Report Bundle
-        </button>
-        <ArchiveTransferProgress state={archiveTransfer} onCancel={cancelArchiveTransfer} />
-        <section className="account-box" aria-label="Archive import wizard">
-          <div className="section-title">Archive Import</div>
-          <select aria-label="Archive import mode" value={archiveImportMode} onChange={(event) => updateArchiveImportMode(event.target.value as ArchiveImportMode)}>
-            <option value="upsert">Apply archive</option>
-            <option value="reject_conflicts">Reject conflicts</option>
-            <option value="skip_conflicts">Skip conflicts</option>
-            <option value="dry_run">Dry run validation</option>
-          </select>
-          <select aria-label="Archive import scope" value={archiveImportScope} onChange={(event) => updateArchiveImportScope(event.target.value as ArchiveImportScope)}>
-            <option value="all">All records</option>
-            <option value="assets_only">Assets only</option>
-            <option value="selected_collections">Selected records</option>
-          </select>
-          {archiveImportScope === "selected_collections" && (
-            <div className="asset-pressure-list" aria-label="Archive import collection selection">
-              {archiveImportCollectionOptions.map((option) => (
-                <label className="operator-row tool-call-row" key={option.id}>
-                  <span>{option.label}</span>
-                  <input
-                    type="checkbox"
-                    aria-label={`Import ${option.label}`}
-                    checked={archiveImportCollections.includes(option.id)}
-                    onChange={(event) => updateArchiveImportCollection(option.id, event.target.checked)}
-                  />
-                </label>
-              ))}
-            </div>
-          )}
-          <button className="ghost-button wide" type="button" onClick={() => document.getElementById("import-file")?.click()} disabled={isImportingArchive || archiveTransferBusy} aria-describedby="import-status" title="Import a streamed .ottx archive or legacy .ottx.json archive">
-            {isImportingArchive ? <RefreshCw size={16} /> : <Upload size={16} />} {archiveImportMode === "dry_run" ? "Validate Archive" : "Import Archive"}
-          </button>
-          {archiveImportReport && (
-            <div className="asset-pressure-list" aria-label="Archive import validation">
-              <div className="operator-row tool-call-row">
-                <span>{archiveImportReportFileName || "Archive"}</span>
-                <strong>{archiveImportReport.dryRun ? "dry run" : "applied"}</strong>
-              </div>
-              <div className="operator-row tool-call-row">
-                <span>Scope</span>
-                <strong>{archiveImportReport.importScope === "assets_only" ? "assets only" : archiveImportReport.importScope === "selected_collections" ? "selected records" : "all records"}</strong>
-              </div>
-              {archiveImportReport.importCollections && archiveImportReport.importScope === "selected_collections" && (
-                <div className="operator-row tool-call-row">
-                  <span>Collections</span>
-                  <strong>{archiveImportReport.importCollections.join(", ")}</strong>
-                </div>
-              )}
-              <div className="operator-row tool-call-row">
-                <span>Records</span>
-                <strong>{summarizeImport(archiveImportReport)}</strong>
-              </div>
-              <div className="operator-row tool-call-row">
-                <span>Conflicts</span>
-                <strong>{formatNumber(archiveImportReport.conflicts.length)}</strong>
-              </div>
-              {archiveImportReport.importWarnings && archiveImportReport.importWarnings.length > 0 && (
-                <div className="operator-row tool-call-row">
-                  <span>Dependency warnings</span>
-                  <strong>{formatNumber(archiveImportReport.importWarnings.length)}</strong>
-                </div>
-              )}
-              {archiveImportReport.importWarnings?.slice(0, 3).map((warning) => (
-                <div className="operator-row tool-call-row" key={warning}>
-                  <span>Warning</span>
-                  <strong>{warning}</strong>
-                </div>
-              ))}
-              {archiveImportReport.skippedConflicts && (
-                <div className="operator-row tool-call-row">
-                  <span>Skipped</span>
-                  <strong>{formatNumber(archiveImportReport.skippedConflicts.length)}</strong>
-                </div>
-              )}
-              {archiveImportReport.conflicts.slice(0, 4).map((conflict) => (
-                <div className="operator-row tool-call-row" key={`${conflict.collection}:${conflict.id}`}>
-                  <span>{conflict.collection}</span>
-                  <strong>{conflict.id}</strong>
-                </div>
-              ))}
-            </div>
-          )}
-          <ArchiveImportRecovery
-            operations={archiveImportOperations}
-            selectedOperationId={selectedArchiveImportOperationId}
-            preview={archiveImportRollbackPreview}
-            busy={archiveImportRecoveryBusy}
-            onSelect={(operationId) => {
-              setSelectedArchiveImportOperationId(operationId);
-              setArchiveImportRollbackPreview(undefined);
-            }}
-            onPreview={(operationId) => void previewArchiveImportRollback(operationId).catch((error) => reportError(error))}
-            onRollback={(operationId) => void rollbackArchiveImport(operationId).catch((error) => reportError(error))}
-          />
-        </section>
-        <input
-          id="import-file"
-          type="file"
-          accept=".ottx,.ottx.json,application/vnd.open-tabletop.ottx-stream,application/json"
-          aria-label="Import campaign archive"
-          hidden
-          onChange={async (event) => {
-            const file = event.target.files?.[0];
-            if (!file) return;
-            await importCampaignArchive(file, event.currentTarget);
-          }}
-        />
-        <div id="import-status" className="import-status" role="status" aria-live="polite">
-          <strong>Import</strong>
-          <span>{importStatus}</span>
-        </div>
-        {failedArchiveImport && (
-          <div className="operator-row tool-call-row" aria-label="Archive import recovery">
-            <span>{failedArchiveImport.file.name} failed: {failedArchiveImport.message}</span>
-            <div className="admin-actions">
-              <button className="ghost-button" type="button" disabled={isImportingArchive || archiveTransferBusy} onClick={() => retryArchiveImport().catch((error) => reportError(error))}>
-                <RefreshCw size={16} /> Retry import
-              </button>
-              <button className="ghost-button" type="button" onClick={dismissArchiveImportFailure}>
-                <X size={16} /> Dismiss
-              </button>
-            </div>
-          </div>
-        )}
+                  <button className="ghost-button" onClick={() => exportDogfoodReportBundle().catch((error) => reportError(error))} title="Download a redacted issue report bundle">
+                    <Download size={16} /> Report Bundle
+                  </button>
+                  <ArchiveTransferProgress state={archiveTransfer} onCancel={cancelArchiveTransfer} />
+                  <LazyArchiveImportWizard
+                    mode={archiveImportMode}
+                    scope={archiveImportScope}
+                    collections={archiveImportCollections}
+                    importing={isImportingArchive}
+                    transferBusy={archiveTransferBusy}
+                    report={archiveImportReport}
+                    reportFileName={archiveImportReportFileName}
+                    status={importStatus}
+                    failure={failedArchiveImport}
+                    onModeChange={updateArchiveImportMode}
+                    onScopeChange={updateArchiveImportScope}
+                    onCollectionChange={updateArchiveImportCollection}
+                    onImport={importCampaignArchive}
+                    onRetry={() => void retryArchiveImport().catch(reportError)}
+                    onDismissFailure={dismissArchiveImportFailure}
+                  >
+                    <ArchiveImportRecovery
+                      operations={archiveImportOperations}
+                      selectedOperationId={selectedArchiveImportOperationId}
+                      preview={archiveImportRollbackPreview}
+                      busy={archiveImportRecoveryBusy}
+                      onSelect={(operationId) => {
+                        setSelectedArchiveImportOperationId(operationId);
+                        setArchiveImportRollbackPreview(undefined);
+                      }}
+                      onPreview={(operationId) => void previewArchiveImportRollback(operationId).catch((error) => reportError(error))}
+                      onRollback={(operationId) => void rollbackArchiveImport(operationId).catch((error) => reportError(error))}
+                    />
+                  </LazyArchiveImportWizard>
+                </DeferredPanel>
               </div>
             )}
             {activeManageCategory === "serverAdmin" && (
@@ -10143,6 +10043,17 @@ export function App() {
             onlineCount={snapshot.presences.length}
             sceneActive={canManageScenes && selectedScene && workspaceMode !== "manage" && !sceneWorkspaceHidden ? selectedScene.active : undefined}
           />
+          {workspaceMode === "live" && !playerPreview.open && !blankCanvasDemoOpen && currentMember?.campaignId === campaignId && snapshot.session?.user.id === currentUserId && (canManagePartyRolls || Boolean(snapshot.partyRollRequests?.length)) && (
+            <DeferredPanel label="party rolls"><LazyPartyRollPanel key={`${campaignId}:${currentUserId}:${currentMember.role}`} campaignId={campaignId} currentUserId={currentUserId}
+              canManage={canManagePartyRolls}
+              requests={(snapshot.partyRollRequests ?? []).filter((entry) => entry.campaignId === campaignId).flatMap((entry) => {
+                if (canManagePartyRolls) return [entry];
+                if (currentMember.role !== "player" || !hasPermission("dice.roll") || !hasPermission("actor.read")) return [];
+                const recipients = entry.recipients.filter((row) => row.userId === currentUserId && snapshot.actors.some((actor) => actor.id === row.actorId && actor.ownerUserId === currentUserId));
+                return recipients.length ? [{ ...entry, recipients }] : [];
+              })}
+              onRefresh={async () => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); }} /></DeferredPanel>
+          )}
           {showTableWorkspace && <WorkspaceViewControls
             shortPhone={shortPhone}
             contentWorkspace={contentWorkspace}
@@ -10290,11 +10201,14 @@ export function App() {
         {showTableWorkspace ? (
         <div className={`table-grid workspace-${workspaceMode}`} data-short-phone={shortPhone ? "true" : undefined} data-content-workspace={contentWorkspace ? "true" : undefined} data-scene-preview={contentWorkspace && prepScenePreview ? "true" : undefined} data-inspector-open={inspectorVisible ? "true" : "false"} {...inspectorWidth.layoutProps}>
           <section id="scene-workspace" className={`table-area scene-workspace ${canvasAssetDragging ? "canvas-asset-dragging" : ""}`} hidden={sceneWorkspaceHidden}>
+            {workspaceMode === "live" && currentMember?.role === "player" && hasPermission("actor.updateOwned") && hasPermission("actor.read") && hasPermission("scene.read") && hasPermission("token.read") && !snapshot.actors.some((actor) => actor.type === "character" && actor.ownerUserId === currentUserId) && (
+              <CharacterClaimPanel key={campaignId + currentUserId} campaignId={campaignId} snapshot={snapshot} onChoose={(option, key) => chooseCharacter(option, key, false)} />
+            )}
             {sceneSwitchTarget && <progress aria-label="Loading selected scene" className="scene-switch-progress" />}
             <Toolbar key={`${workspaceMode}-${tab}`} onSelectTool={selectCanvasTool} onCreateToken={async () => { await createToken(); }} onStartCombat={openCombatSetup} onRevealFog={revealFog} onHideFog={hideFog} onRevealFogPolygon={revealFogPolygon} onToggleFogBrush={toggleFogBrush} onToggleAnnotationTool={toggleAnnotationTool} onDeleteLatestAnnotation={deleteLatestAnnotation} onUndoScene={undoSceneEdit} onUndoFog={undoFog} onShowFogHistory={showFogHistory} onSampleVisionPoint={sampleVisionPoint} onSaveFogPreset={saveFogPreset} onApplyFogPreset={applyFogPreset} onDeleteFogPreset={deleteFogPreset} onCyclePlayerVisionPreview={playerPreview.show} onAddWall={addWall} onAddTerrainWall={addTerrainWall} onAddDoor={addDoor} onAddWindow={addWindow} onAddLight={addLight} onAddDarkness={addDarkness} onActionError={(error) => reportError(error)} canCreateToken={hasPermission("token.create")} canManageCombat={hasPermission("combat.manage")} canRevealFog={hasPermission("token.reveal")} canPreviewPlayerVision={Boolean(selectedScene && canPreviewPlayer && playerPreview.players.length > 0)} playerVisionPreviewLabel={playerPreview.open ? playerPreview.playerName : undefined} activeFogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} activeAnnotationTool={annotationTool} hasFogPresets={snapshot.fogPresets.length > 0} canUpdateScene={hasPermission("scene.update")} canAnnotate={hasPermission("scene.read")} />
             <div className="map-play-surface">
               {activeCombat && selectedScene && <InitiativeStrip combat={activeCombat} currentCombatantId={currentTurnCombatant?.id} nextCombatantId={nextTurnCombatant?.id} canAdvance={hasPermission("combat.manage")} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onNextTurn={(combat) => advanceCombatTurn(combat, 1)} onOpenTracker={() => selectInspectorTab("combat")} onError={reportError} />}
-              {selectedScene ? <LiveSceneCanvas pinJournals={snapshot.journals} pinHandouts={handouts} onSavePin={hasPermission("campaign.update") && hasPermission("scene.update") && hasPermission("token.reveal") ? async (scene, mapPin) => { const request = currentWorkspaceRequestIdentity(); const result = await runSharedMutation(() => saveScenePin(scene, mapPin), scene.campaignId, scene.id); if (workspaceIdentityIsCurrent(request)) applySceneToSnapshot(result); } : undefined} visionStore={visionStore} scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} calibrationPoints={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? gridCalibrationPoints : undefined} onCalibrationPoint={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? (point) => setGridCalibrationPoints((current) => appendGridCalibrationPoint(current, point)) : undefined} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canMoveToken={hasPermission("token.move")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} canUpdateTokenLayer={hasPermission("token.update")} onSelect={selectCanvasToken} onInspectToken={(tokenId) => { selectCanvasToken(tokenId); selectInspectorTab("actors"); }} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={async () => undefined} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenResizeCommit={recordTokenResizeAction} onTokenLayerCycle={cycleTokenLayer} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onTogglePortal={toggleScenePortal} onSetLightAnimation={(lightId, animation) => { void patchSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/lights/${lightId}`, { animation }, `scene:light:animation:${lightId}`).then(applySceneToSnapshot).catch(reportError); }} selectedOverlay={selectedOverlay} onSelectOverlay={setSelectedOverlay} onZoomBy={zoomBattleMap} onTokenTarget={setTokenTarget} /> : (
+              {selectedScene ? <LiveSceneCanvas presentationMembers={snapshot.members} canPresentJournalPin={hasPermission("campaign.update") && hasPermission("journal.update")} canPresentHandoutPin={hasPermission("campaign.update") && hasPermission("handout.update")} pinJournals={snapshot.journals} pinHandouts={handouts} onSavePin={hasPermission("campaign.update") && hasPermission("scene.update") && hasPermission("token.reveal") ? async (scene, mapPin) => { const request = currentWorkspaceRequestIdentity(); const result = await runSharedMutation(() => saveScenePin(scene, mapPin), scene.campaignId, scene.id); if (workspaceIdentityIsCurrent(request)) applySceneToSnapshot(result); } : undefined} visionStore={visionStore} scene={selectedScene} zoom={battleMapZoom} backgroundAsset={selectedMapAsset} selectedAssetId={selectedBoardAssetId} assets={snapshot.assets} tokens={snapshot.tokens} actors={snapshot.actors} boardCurrentUserId={currentUserId} canSeeAllVitals={hasPermission("combat.manage")} currentTurnTokenIds={currentTurnTokenIds} nextTurnTokenIds={nextTurnTokenIds} vision={snapshot.vision} selectedTokenId={selectedTokenId} selectedTokenIds={selectedTokenIds} activeTokenLayer={activeTokenLayer} fogBrushMode={hasPermission("token.reveal") ? fogBrushMode : null} annotationTool={annotationTool} calibrationPoints={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? gridCalibrationPoints : undefined} onCalibrationPoint={gridCalibrationOpen && selectedScene.gridType !== "gridless" ? (point) => setGridCalibrationPoints((current) => appendGridCalibrationPoint(current, point)) : undefined} templateShape={templateShape} visibleAnnotationLayers={visibleAnnotationLayers} canDropToken={hasPermission("token.create")} canMoveToken={hasPermission("token.move")} canUpdateAnnotations={hasPermission("scene.update")} canResizeToken={hasPermission("token.update")} canUpdateTokenLayer={hasPermission("token.update")} onSelect={selectCanvasToken} onInspectToken={(tokenId) => { selectCanvasToken(tokenId); selectInspectorTab("actors"); }} onSelectMany={selectCanvasTokens} onSelectBackgroundAsset={selectBoardBackgroundAsset} onClearSelection={clearTokenSelection} onMoved={async () => undefined} onTokenMovePersist={persistSceneCanvasTokenMove} onTokenResizePersist={persistSceneCanvasTokenResize} onTokenResizeCommit={recordTokenResizeAction} onTokenLayerCycle={cycleTokenLayer} onTokenDrop={createTokenFromDrop} onFogStroke={paintFogStroke} onAnnotationCreate={createSceneAnnotation} onAnnotationMove={moveSceneAnnotation} onTogglePortal={toggleScenePortal} onSetLightAnimation={(lightId, animation) => { void patchSceneChildMutation(selectedScene, `/api/v1/scenes/${selectedScene.id}/lights/${lightId}`, { animation }, `scene:light:animation:${lightId}`).then(applySceneToSnapshot).catch(reportError); }} selectedOverlay={selectedOverlay} onSelectOverlay={setSelectedOverlay} onZoomBy={zoomBattleMap} onTokenTarget={setTokenTarget} /> : (
                 <div className="empty-state empty-state-action">
                   {!selectedCampaign ? <>
                     <h2>Start your first table</h2>
@@ -10313,7 +10227,7 @@ export function App() {
               )}
               {workspaceMode === "live" && !sceneWorkspaceHidden && !playerPreview.open && !blankCanvasDemoOpen && selectedScene?.campaignId === campaignId && currentMember?.campaignId === campaignId && snapshot.session?.user.id === currentUserId &&
                 <PersonalHotbar key={hotbarStoragePrefix(apiBase, currentUserId, campaignId)} storagePrefix={hotbarStoragePrefix(apiBase, currentUserId, campaignId)} campaignId={campaignId} userId={currentUserId}
-                  actors={snapshot.actors} selectedActorId={selectedActor?.id} sceneId={selectedScene.id} tokens={snapshot.tokens} selectedTokenId={selectedToken?.id} items={snapshot.items} permissions={currentMember.permissions} savedFormulas={savedDiceFormulas} macros={snapshot.diceMacros}
+                  actors={snapshot.actors} selectedActorId={selectedActor?.id} sceneId={selectedScene.id} tokens={snapshot.tokens} selectedTokenId={selectedToken?.id} items={snapshot.items} permissions={currentMember.permissions} savedFormulas={savedDiceFormulas} macros={snapshot.diceMacros} tables={snapshot.rollableTables ?? []} onDrawTable={(tableId, visibility) => mutateRollableTable({ kind: "draw", tableId, visibility })}
                   onDiceRoll={rollDice} onActorRoll={useActorAction} onError={reportError} onDeclarativeRoll={(sheet, rollId) => runWorkspaceBoundAction(
                     (request) => rollDeclarativeActor(prepareDeclarativeRoll(request.campaignId, sheet, rollId, crypto.randomUUID()), request.controller.signal),
                     (result) => { applyActorToSnapshot(result.actor); setStatus(`${result.quickRoll.label}: ${result.roll.total}`); })} />}
@@ -10697,7 +10611,7 @@ export function App() {
             )}
             {tab === "sessions" && <SessionDeskPanel key={`sessions:${campaignId}:${currentUserId}`} campaignId={campaignId} sessions={campaignSessions} scenes={accessibleScenes} encounters={snapshot.encounters} canManage={hasPermission("campaign.update")} canStart={hasPermission("scene.activate")} canCreateReport={sessionReportAllowed(hasPermission)} onSessionsChange={(sessions) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) updateCampaignSessions(sessions); }} onSceneActivated={(nextSceneId) => { if (!workspaceRequestIsCurrent(campaignId, currentUserId)) return; realtimeSelectionRef.current = { ...realtimeSelectionRef.current, sceneId: nextSceneId }; invalidateInFlightRefreshes(); setSnapshot((current) => ({ ...current, scenes: applyActiveSceneIdentity(current.scenes, campaignId, nextSceneId) })); setSceneId(nextSceneId); void refresh(campaignId, nextSceneId, { syncStatus: false }); }} onJournalCreated={applyJournalToSnapshot} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
             {tab === "worlds" && <WorldAtlasPanel key={`worlds:${campaignId}:${currentUserId}`} campaignId={campaignId} campaignUpdatedAt={selectedCampaign?.updatedAt ?? ""} worlds={worlds} worldRecords={snapshot.worldRecords} worldRelations={snapshot.worldRelations} scenes={accessibleScenes} selectedWorldId={selectedWorldId} canCreate={hasPermission("world.create")} canUpdateWorld={hasPermission("world.update")} canAssignScenes={hasPermission("scene.update")} canDelete={hasPermission("world.delete")} loadState={worldsLoadState} loadError={worldsLoadError} onRetryLoad={() => setLoreReloadVersion((version) => version + 1)} onWorldsChange={(nextWorlds) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setWorlds(nextWorlds); }} onWorldRecordsChange={(worldRecords) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setSnapshot((current) => ({ ...current, worldRecords })); }} onWorldRelationsChange={(worldRelations) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setSnapshot((current) => ({ ...current, worldRelations })); }} onSelectWorld={(worldId) => { setSelectedWorldId(worldId); const nextScene = accessibleScenes.find((scene) => worldFilterMatchesScene(scene, worldId)); setSceneId(nextScene?.id ?? ""); }} onSceneUpdated={applySceneToSnapshot} onRefreshSharedState={async () => { await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); if (workspaceRequestIsCurrent(campaignId, currentUserId)) setLoreReloadVersion((version) => version + 1); }} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
-            {tab === "handouts" && <HandoutLibraryPanel key={`handouts:${campaignId}:${currentUserId}`} campaignId={campaignId} campaignUpdatedAt={selectedCampaign?.updatedAt ?? ""} currentUserId={currentUserId} handouts={handouts} worlds={worlds} members={snapshot.members} actors={partyActors} assets={snapshot.assets} canCreate={hasPermission("handout.create")} canUpdate={hasPermission("handout.update")} canDelete={hasPermission("handout.delete")} loadState={handoutsLoadState} loadError={handoutsLoadError} onRetryLoad={() => setLoreReloadVersion((version) => version + 1)} onHandoutsChange={(update) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setHandouts(update); }} onRefreshSharedState={async () => { await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); if (workspaceRequestIsCurrent(campaignId, currentUserId)) setLoreReloadVersion((version) => version + 1); }} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
+            {tab === "handouts" && <HandoutLibraryPanel key={`handouts:${campaignId}:${currentUserId}`} campaignId={campaignId} campaignUpdatedAt={selectedCampaign?.updatedAt ?? ""} currentUserId={currentUserId} handouts={handouts} worlds={worlds} members={snapshot.members} actors={partyActors} assets={snapshot.assets} canPresent={hasPermission("campaign.update") && hasPermission("handout.update")} canCreate={hasPermission("handout.create")} canUpdate={hasPermission("handout.update")} canDelete={hasPermission("handout.delete")} loadState={handoutsLoadState} loadError={handoutsLoadError} onRetryLoad={() => setLoreReloadVersion((version) => version + 1)} onHandoutsChange={(update) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setHandouts(update); }} onRefreshSharedState={async () => { await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); if (workspaceRequestIsCurrent(campaignId, currentUserId)) setLoreReloadVersion((version) => version + 1); }} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
             {tab === "journal" && (
               <JournalPanel
                 key={`journal:${campaignId}:${currentUserId}`}
@@ -10722,7 +10636,7 @@ export function App() {
             )}
             {tab === "memory" && <LazyCampaignMemoryPanel key={`memory:${campaignId}:${currentUserId}`} campaignId={campaignId} campaignUpdatedAt={selectedCampaign?.updatedAt ?? ""} facts={snapshot.memory as AiMemoryFact[]} canCreate={hasPermission("ai.proposeChanges")} canReview={hasPermission("ai.applyChanges")} onFactsChange={(memory) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setSnapshot((current) => ({ ...current, memory })); }} onExtract={extractMemory} onStatus={(message) => { if (workspaceRequestIsCurrent(campaignId, currentUserId)) setStatus(message); }} />}
             {tab === "search" && <CampaignSearchPanel key={`search:${campaignId}:${currentUserId}`} campaignId={campaignId} worlds={worlds} revision={snapshot.eventSequence} storageKey={`otte:campaign-search:${campaignId}:${currentUserId}`} onOpenResult={openCampaignSearchResult} />}
-            {tab === "chat" && <ChatRail campaignId={campaignId} currentUserId={currentUserId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} presences={snapshot.presences} scenes={snapshot.scenes} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onReplyToMessage={(message) => setChatReplyToMessageId(message.id)} onEditMessage={editChatMessage} onDeleteMessage={deleteChatMessage} onModerateMessage={moderateChatMessage} onClearReply={() => setChatReplyToMessageId("")} canWrite={hasPermission("chat.write")} canModerate={hasPermission("chat.moderate")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => persistQuickPreferences({ dice3dEnabled: !dice3dEnabled }, dice3dEnabled ? "Use text-only dice" : "Enable 3D dice")} notificationPreference={resolvedUserPreferences(snapshot.session?.user ?? {}).chatNotifications} connectionState={realtimeUiState} />}
+            {tab === "chat" && <ChatRail campaignId={campaignId} currentUserId={currentUserId} command={chatBody} setCommand={setChatBody} replyTarget={chatReplyTarget} messages={snapshot.chat} rolls={snapshot.rolls} concealedRollIds={concealedRollIds} members={snapshot.members} presences={snapshot.presences} scenes={snapshot.scenes} diceFormula={diceFormula} setDiceFormula={setDiceFormula} diceVisibility={diceVisibility} setDiceVisibility={setDiceVisibility} savedDiceFormulas={savedDiceFormulas} diceMacros={snapshot.diceMacros} tables={blankCanvasDemoOpen || currentMember?.campaignId !== campaignId || snapshot.session?.user.id !== currentUserId ? undefined : snapshot.rollableTables} canManageTables={hasPermission("campaign.update")} onTableMutation={mutateRollableTable} onRollDice={rollDice} onSaveDiceFormula={saveCurrentDiceFormula} onSubmitCommand={submitChatCommand} onReplyToMessage={(message) => setChatReplyToMessageId(message.id)} onEditMessage={editChatMessage} onDeleteMessage={deleteChatMessage} onModerateMessage={moderateChatMessage} onClearReply={() => setChatReplyToMessageId("")} canWrite={hasPermission("chat.write")} canModerate={hasPermission("chat.moderate")} canRollDice={hasPermission("dice.roll")} dice3dEnabled={dice3dEnabled} onToggleDice3d={() => persistQuickPreferences({ dice3dEnabled: !dice3dEnabled }, dice3dEnabled ? "Use text-only dice" : "Enable 3D dice")} notificationPreference={resolvedUserPreferences(snapshot.session?.user ?? {}).chatNotifications} connectionState={realtimeUiState} />}
             {tab === "combat" && <CombatPanel campaignId={campaignId} combat={activeCombat} recentCombats={recentEndedCombats} auditLogs={snapshot.combatAudit} actors={snapshot.actors} tokens={selectedSceneTokens} onFocusCombatant={(combatant) => selectSingleToken(combatant.tokenId)} onStart={openCombatSetup} onPlanEncounter={planSystemEncounter} onNext={(combat) => advanceCombatTurn(combat, 1)} onPrevious={(combat) => advanceCombatTurn(combat, -1)} onEnd={endCombat} onAwardPartyXp={awardPartyXp} onAwardPartyGold={awardPartyGold} onRecordLoot={recordCombatLoot} canAwardRewards={hasPermission("combat.manage") && hasPermission("actor.update")} onUpdateCombatant={updateCombatant} onConfirmAction={confirmCombatAction} onRejectAction={rejectCombatAction} onCombatUpdated={(combat) => setSnapshot((current) => ({ ...current, combats: current.combats.map((candidate) => candidate.id === combat.id ? combat : candidate) }))} onRefresh={async () => { await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); }} onStatus={setStatus} onRulesMutationApplied={setLastDndRulesUndo} onTypedDamageApplied={applyTypedDamageResult} onAdjustVitals={adjustCombatVitals} onAddCombatant={addCombatantToActiveCombat} onRemoveCombatant={removeCombatantFromActiveCombat} onSpendLegendaryAction={spendLegendaryAction} canManage={hasPermission("combat.manage")} canManageEffects={hasPermission("combat.manage") && hasPermission("actor.update")} canPreviewEffects={hasPermission("actor.readPrivate")} canAdjustVitals={hasPermission("combat.manage") && hasPermission("actor.update")} vitalsDisabledReason={hasPermission("combat.manage") ? "Requires actor.update permission" : "Requires combat.manage permission"} canManageRoster={hasPermission("combat.manage")} rosterDisabledReason="Requires combat.manage permission" canManageLegendaryActions={hasPermission("combat.manage") && hasPermission("actor.update")} legendaryActionsDisabledReason={hasPermission("combat.manage") ? "Requires actor.update permission" : "Requires combat.manage permission"} />}
             {tab === "content" && <LazyContentImportPanel assets={snapshot.assets} assetStorage={snapshot.assetStorage} selectedScene={selectedScene} assetSearch={assetSearch} setAssetSearch={setAssetSearch} assetFolder={assetFolder} setAssetFolder={setAssetFolder} assetTags={assetTags} setAssetTags={setAssetTags} assetStatus={assetStatus} failedAssetUpload={failedAssetUpload} onRetryFailedAssetUpload={retryAssetUpload} onDismissFailedAssetUpload={dismissFailedAssetUpload} lifecycleReason={assetLifecycleReason} setLifecycleReason={setAssetLifecycleReason} onUploadAsset={uploadAssetToLibrary} onSetSceneBackground={setSceneBackgroundFromAsset} onPlaceAssetToken={createTokenFromAsset} onUpdateAssetMetadata={updateAssetMetadata} onUpdateAssetLifecycle={updateAssetLifecycle} onCreateAssetDeliveryUrl={createAssetDeliveryUrl} imports={snapshot.contentImports} kind={contentImportKind} setKind={setContentImportKind} name={contentImportName} setName={setContentImportName} body={contentImportBody} setBody={setContentImportBody} status={contentImportStatus} onPreview={previewContentImport} onAnalyzePdf={analyzePdfContentImport} onApply={applyContentImport} onRollback={rollbackContentImport} onDelete={deleteContentImport} canManage={hasPermission("campaign.update")} canProposeAiChanges={hasPermission("ai.proposeChanges")} canCreateAsset={hasPermission("scene.create")} canUpdateScene={hasPermission("scene.update")} canCreateToken={hasPermission("token.create")} />}
             {tab === "plugins" && <LazySdkPanel systemManagement={selectedCampaign ? { campaign: selectedCampaign, currentUserId, canRegisterSystem: Boolean(snapshot.session?.serverAdmin) && hasPermission("campaign.update"), onChanged: async (actor) => { if (actor) applyActorToSnapshot(actor); await refresh(campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false }); }, onOpenActorSheet: (actor) => selectActor(actor.id) } : undefined} plugins={snapshot.plugins} systems={snapshot.systems} characterTemplates={snapshot.characterTemplates} actor={selectedActor} advancementOptions={advancementOptions} advancementGrantsFeat={advancementGrantsFeat} advancementFeats={advancementFeats} multiclassOptions={multiclassOptions} advancementClassName={advancementClassName} nextClassLevel={advancementNextClassLevel} requiresSubclass={advancementRequiresSubclass} subclassOptions={advancementSubclassOptions} weaponMastery={advancementWeaponMastery} spellAdvancementPaths={spellAdvancementPaths} pendingAdvancement={pendingAdvancement} importedActor={importedActor} createdMonster={createdMonster} onSyncPluginRegistries={syncPluginRegistries} onInstallPlugin={installPlugin} onInstallSystem={installSystem} onCreateCharacter={createCharacterFromTemplate} onOpenCharacterCreator={() => void openCharacterCreator()} onImportCharacter={() => setCharacterImportOpen(true)} onCreateMonster={createSystemMonster} onPreviewActor={previewSelectedActorAdvancement} onAdvanceActor={advanceSelectedActor} onCancelPendingAdvancement={cancelSelectedActorPendingAdvancement} onPreviewRestActor={previewSelectedActorRest} onRestActor={restSelectedActor} onRunCommand={runPluginCommand} onSystemRoll={rollSystemCheck} canInstall={Boolean(snapshot.session?.serverAdmin) && hasPermission("plugin.install")} canInstallSystem={hasPermission("campaign.update")} canCreateActor={hasPermission("actor.create")} canImportActor={hasPermission("actor.create")} canAdvanceActor={canUpdateSelectedActor} canRestActor={canUpdateSelectedActor} canRollSystem={hasPermission("dice.roll")} />}

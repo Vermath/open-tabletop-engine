@@ -133,8 +133,20 @@ test("GM streams an above-fixture archive, cancels import, retries, and restores
   releaseInterceptedImport?.();
   await page.unroute("**/api/v1/import/campaign/stream?*", firstImportHandler);
 
-  await page.getByRole("button", { name: "Retry import" }).click();
-  await expect(transfer).toContainText(/transferring|validating/, { timeout: 15_000 });
+  // Keep the retry in flight while checking progress. A fast local import can
+  // otherwise reach its terminal state before Playwright observes the update.
+  let releaseRetry!: () => void;
+  const retryGate = new Promise<void>((resolve) => { releaseRetry = resolve; });
+  await page.route("**/api/v1/import/campaign/stream?*", async (route) => {
+    await retryGate;
+    await route.continue();
+  }, { times: 1 });
+  try {
+    await page.getByRole("button", { name: "Retry import" }).click();
+    await expect(transfer).toContainText(/transferring|validating/, { timeout: 15_000 });
+  } finally {
+    releaseRetry();
+  }
   await expect(transfer).toContainText("complete", { timeout: 30_000 });
   await expect(page.getByLabel("Archive import recovery")).toHaveCount(0);
 

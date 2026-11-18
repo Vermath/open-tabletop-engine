@@ -27,6 +27,7 @@ export interface CampaignSetupStepsProps {
 
 export function CampaignSetupSteps(props: CampaignSetupStepsProps) {
   const { draft } = props;
+  const emberVault = draft.starterAdventure === "ember-vault";
   const activeIndex = campaignSetupSteps.indexOf(draft.route.step);
   const permissionTemplate = campaignPermissionTemplates.find((template) => template.id === draft.permissionTemplate) ?? campaignPermissionTemplates[0]!;
   const update = (patch: Partial<CampaignSetupDraftInput>) => props.onChange({
@@ -40,11 +41,11 @@ export function CampaignSetupSteps(props: CampaignSetupStepsProps) {
     route: moveCampaignSetupRoute(draft.route, "skip")
   });
   const systemName = props.systems.find((system) => system.id === draft.systemId)?.name ?? (draft.systemId === "dnd-5e-srd" ? "D&D 5.5e SRD" : draft.systemId);
-  const sceneName = draft.starterContent ? "First Session" : draft.sceneName.trim() || "Opening Scene";
+  const sceneName = emberVault ? "Vault Entry" : draft.starterContent ? "First Session" : draft.sceneName.trim() || "Opening Scene";
   const sceneFolder = draft.starterContent ? "starter content" : draft.sceneFolder.trim() || "no folder";
   const visibility = draft.visibility === "invite_only" ? "Invite only" : draft.visibility === "public" ? "Public" : "Private";
   const invite = draft.inviteEnabled ? `${roleLabel(draft.inviteRole)} invite${draft.inviteEmail.trim() ? ` for ${draft.inviteEmail.trim()}` : ""}` : "No starter invite";
-  const onboarding = draft.starterContent ? "Starter content: First Session and welcome notes" : draft.onboardingBody.trim() ? `Public handout: ${draft.onboardingTitle.trim() || "Welcome to the Table"}` : "No onboarding handout";
+  const onboarding = emberVault ? "The Ember Key player handout" : draft.starterContent ? "Starter content: First Session and welcome notes" : draft.onboardingBody.trim() ? `Public handout: ${draft.onboardingTitle.trim() || "Welcome to the Table"}` : "No onboarding handout";
 
   return (
     <form
@@ -88,13 +89,21 @@ export function CampaignSetupSteps(props: CampaignSetupStepsProps) {
             <p className="account-summary">Only the name is required. You can change every setting later.</p>
             <input autoFocus aria-label="Campaign name" value={draft.name} placeholder="Campaign name" onChange={(event) => update({ name: event.target.value })} />
             <textarea aria-label="Campaign description" value={draft.description} placeholder="Description" onChange={(event) => update({ description: event.target.value })} />
-            <label><span>Rules system</span><select aria-label="Campaign rules system" value={draft.systemId} onChange={(event) => update({ systemId: event.target.value })}>{props.systems.length === 0 ? <option value="dnd-5e-srd">D&amp;D 5.5e SRD</option> : props.systems.map((system) => <option key={system.id} value={system.id}>{system.name}</option>)}</select></label>
+            <label><span>Starting adventure</span><select aria-label="Starting adventure" value={draft.starterAdventure ?? "blank"} onChange={(event) => update(event.target.value === "ember-vault"
+              ? { starterAdventure: "ember-vault", systemId: "dnd-5e-srd", starterContent: true, name: draft.name.trim() ? draft.name : "The Ember Vault" }
+              : { starterAdventure: undefined })}>
+              <option value="blank">Blank campaign</option>
+              <option value="ember-vault" disabled={props.systems.length > 0 && !props.systems.some((system) => system.id === "dnd-5e-srd")}>Play Ember Vault</option>
+            </select></label>
+            {emberVault && <p className="account-summary">Start with an illustrated vault, two equipped heroes, and the Vault Watch encounter for D&amp;D 5.5e SRD.</p>}
+            <label><span>Rules system</span><select aria-label="Campaign rules system" disabled={emberVault} value={draft.systemId} onChange={(event) => update({ systemId: event.target.value })}>{props.systems.length === 0 ? <option value="dnd-5e-srd">D&amp;D 5.5e SRD</option> : props.systems.map((system) => <option key={system.id} value={system.id}>{system.name}</option>)}</select></label>
             <label><span>Who can find it</span><select aria-label="Campaign visibility" value={draft.visibility} onChange={(event) => update({ visibility: event.target.value as Campaign["visibility"] })}><option value="private">Private</option><option value="invite_only">Invite only</option><option value="public">Public</option></select></label>
           </section>
         )}
         {draft.route.step === "scene" && (
           <section className="campaign-setup-step" aria-labelledby="campaign-setup-scene-heading">
             <h3 id="campaign-setup-scene-heading">Prepare the first scene</h3>
+            {emberVault ? <p className="account-summary">Vault Entry includes a calibrated map, Valen Ash and Mira Vale, and three guards. The Ember Key handout introduces the party's objective.</p> : <>
             <p className="account-summary">Starter content creates a playable scene and welcome notes. Maps, tokens, and encounters remain optional preparation.</p>
             <label className="inline-check"><input aria-label="Include starter content" type="checkbox" checked={draft.starterContent} onChange={(event) => update({ starterContent: event.target.checked })} /><span>Include starter content</span></label>
             {draft.starterContent && <p className="account-summary">Starter content supplies the First Session scene and welcome notes. Turn it off to customize these fields.</p>}
@@ -109,6 +118,7 @@ export function CampaignSetupSteps(props: CampaignSetupStepsProps) {
                 <textarea aria-label="Setup onboarding copy" disabled={draft.starterContent} value={draft.onboardingBody} placeholder="Table rules, safety notes, first-session goals" onChange={(event) => update({ onboardingBody: event.target.value })} />
               </div>
             </details>
+            </>}
           </section>
         )}
         {draft.route.step === "invitation" && (
@@ -130,12 +140,12 @@ export function CampaignSetupSteps(props: CampaignSetupStepsProps) {
         {draft.route.step === "review" && (
           <section className="campaign-setup-step" aria-labelledby="campaign-setup-review-heading">
             <h3 id="campaign-setup-review-heading">Review and create</h3>
-            <p className="account-summary">Character creation, map placement, tokens, and encounters are guided next and remain optional until play needs them.</p>
+            <p className="account-summary">{emberVault ? "Valen Ash and Mira Vale start at the vault entrance. The Vault Watch encounter is ready to run." : "Character creation, map placement, tokens, and encounters are guided next and remain optional until play needs them."}</p>
             <div className="asset-pressure-list" aria-label="Campaign setup impact">
               <div className="operator-row tool-call-row"><span>Campaign</span><strong>{draft.name.trim()}</strong></div>
               <div className="operator-row tool-call-row"><span>Rules system</span><strong>{systemName}</strong></div>
               <div className="operator-row tool-call-row"><span>Access</span><strong>{visibility} - {invite}</strong></div>
-              <div className="operator-row tool-call-row"><span>Scene</span><strong>{sceneName} - {draft.sceneWidth}x{draft.sceneHeight} - {draft.sceneGridType === "gridless" ? "gridless" : `grid ${draft.sceneGridSize}`} - {sceneFolder}</strong></div>
+              <div className="operator-row tool-call-row"><span>Scene</span><strong>{emberVault ? "Vault Entry - 2800x2100 - grid 100" : `${sceneName} - ${draft.sceneWidth}x${draft.sceneHeight} - ${draft.sceneGridType === "gridless" ? "gridless" : `grid ${draft.sceneGridSize}`} - ${sceneFolder}`}</strong></div>
               <div className="operator-row tool-call-row"><span>Permissions</span><strong>{permissionTemplate.label}</strong></div>
               <div className="operator-row tool-call-row"><span>Onboarding</span><strong>{onboarding}</strong></div>
             </div>

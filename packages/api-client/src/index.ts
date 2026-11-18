@@ -23,6 +23,10 @@ import type {
   CampaignPresence,
   CampaignMember,
   CampaignSession,
+  PartyRollRequest,
+  PartyRollChoice,
+  CharacterClaimOption,
+  CharacterClaimResult,
   CharacterTransfer,
   CampaignWebhookDeliveryStatus,
   CampaignWebhookEnvelopeEventType,
@@ -86,6 +90,8 @@ import type {
   DndRulesMutationUndoRequest,
   DndRulesMutationUndoResult,
   DiceMacro,
+  RollableTable,
+  RollableTableInput,
   DiceRoll,
   DiceRollFairness,
   Encounter,
@@ -100,6 +106,8 @@ import type {
   FogRegion,
   DifficultTerrainRegion,
   Handout,
+  PresentContentRequest,
+  PresentationReceipt,
   Item,
   JournalBacklink,
   JournalCanonStatus,
@@ -481,6 +489,7 @@ export interface CampaignCreateInput extends Partial<
 > {
   permissionTemplate?: CampaignPermissionTemplateId;
   starterContent?: boolean;
+  starterAdventure?: "ember-vault";
 }
 
 export type CampaignUpdateInput = Partial<
@@ -651,6 +660,7 @@ export interface CampaignSnapshot {
   campaign: Campaign;
   members: CampaignSnapshotMember[];
   presences: CampaignPresence[];
+  partyRollRequests?: PartyRollRequest[];
   campaignSessions: CampaignSession[];
   worlds: World[];
   worldRecords: WorldRecord[];
@@ -671,6 +681,7 @@ export interface CampaignSnapshot {
   chat: ChatMessage[];
   rolls: DiceRoll[];
   diceMacros: DiceMacro[];
+  rollableTables: RollableTable[];
   encounters: Encounter[];
   combats: Combat[];
   proposals: Proposal[];
@@ -1209,6 +1220,7 @@ export type ReviewedCombatParticipantInput =
 
 export interface ReviewedCombatStartInput {
   sceneId: string;
+  encounterId?: string;
   participants: ReviewedCombatParticipantInput[];
   manualTurnOrder?: boolean;
 }
@@ -2782,6 +2794,28 @@ export class OpenTabletopClient {
     });
   }
 
+  async characterClaims(campaignId: string): Promise<CharacterClaimOption[]> {
+    return this.get(routes.characterClaims(campaignId));
+  }
+
+  async setCharacterClaimOffer(
+    campaignId: string,
+    actorId: string,
+    input: { offered: boolean; expectedUpdatedAt: string },
+    idempotencyKey: string,
+  ): Promise<CharacterClaimOption> {
+    return this.post(routes.characterClaimOffer(campaignId, actorId), input, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async claimCharacter(
+    campaignId: string,
+    actorId: string,
+    input: { expectedUpdatedAt: string },
+    idempotencyKey: string,
+  ): Promise<CharacterClaimResult> {
+    return this.post(routes.characterClaim(campaignId, actorId), input, { "Idempotency-Key": idempotencyKey });
+  }
+
   async characterTransfers(campaignId: string): Promise<CharacterTransfer[]> {
     return this.get(routes.characterTransfers(campaignId));
   }
@@ -3042,6 +3076,18 @@ export class OpenTabletopClient {
       undefined,
       { "Idempotency-Key": idempotencyKey },
     );
+  }
+
+  async partyRollChoices(campaignId: string): Promise<PartyRollChoice[]> {
+    return this.get(routes.partyRollChoices(campaignId));
+  }
+
+  async requestPartyRoll(campaignId: string, input: { rollId: string; actorIds: string[] }, idempotencyKey: string): Promise<{ id: string }> {
+    return this.post(routes.partyRollRequests(campaignId), input, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async answerPartyRoll(campaignId: string, requestId: string, actorId: string): Promise<{ id: string }> {
+    return this.post(routes.answerPartyRoll(campaignId, requestId, actorId), {});
   }
 
   async campaignSessions(campaignId: string): Promise<CampaignSession[]> {
@@ -3930,6 +3976,10 @@ export class OpenTabletopClient {
     );
   }
 
+  async presentContent(campaignId: string, input: PresentContentRequest): Promise<PresentationReceipt> {
+    return this.post(routes.presentations(campaignId), input);
+  }
+
   async handouts(campaignId: string): Promise<Handout[]> {
     return this.get(routes.handouts(campaignId));
   }
@@ -4094,6 +4144,26 @@ export class OpenTabletopClient {
       parameters.set("historyLimit", String(historyLimit));
     const query = parameters.size > 0 ? `?${parameters.toString()}` : "";
     return this.get(`${routes.campaignSnapshot(campaignId)}${query}`);
+  }
+
+  async rollableTables(campaignId: string): Promise<RollableTable[]> {
+    return this.get(routes.rollableTables(campaignId));
+  }
+
+  async createRollableTable(campaignId: string, input: RollableTableInput, idempotencyKey: string): Promise<RollableTable> {
+    return this.post(routes.rollableTables(campaignId), input, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async updateRollableTable(campaignId: string, tableId: string, input: Partial<RollableTableInput> & { expectedUpdatedAt: string }, idempotencyKey: string): Promise<RollableTable> {
+    return this.patch(routes.rollableTable(campaignId, tableId), input, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async deleteRollableTable(campaignId: string, tableId: string, expectedUpdatedAt: string, idempotencyKey: string): Promise<RollableTable> {
+    return this.delete(`${routes.rollableTable(campaignId, tableId)}?${new URLSearchParams({ expectedUpdatedAt })}`, undefined, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async drawRollableTable(campaignId: string, tableId: string, visibility: RollableTable["visibility"], idempotencyKey: string): Promise<ChatMessage> {
+    return this.post(routes.drawRollableTable(campaignId, tableId), { visibility }, { "Idempotency-Key": idempotencyKey });
   }
 
   async diceMacros(campaignId: string): Promise<DiceMacro[]> {

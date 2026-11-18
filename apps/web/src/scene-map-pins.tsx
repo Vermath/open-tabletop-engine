@@ -3,18 +3,23 @@ import { MapPin } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { HandoutAssetGallery, type HandoutLibraryItem } from "./handout-library-panel.js";
 import { MarkdownDocument } from "./markdown-document.js";
+import type { Snapshot } from "./api.js";
+import { PresentToPlayers } from "./presentation.js";
 import type { PinTarget } from "./scene-pin-drag.js";
 import { errorMessage } from "./sheet-format.js";
 import "./scene-map-pins.css";
 
 export interface ScenePinProps {
   pinJournals?: JournalEntry[];
+  presentationMembers?: Snapshot["members"];
+  canPresentJournalPin?: boolean;
+  canPresentHandoutPin?: boolean;
   pinHandouts?: HandoutLibraryItem[];
   onSavePin?(scene: Scene, command: SceneMapPin | { remove: string }): Promise<void>;
 }
 
 export type PinSelection = { kind: "open"; id: string } | { kind: "add"; target?: PinTarget; point?: VisionPoint };
-type Entry = PinTarget & { title: string; body: string; assetIds?: string[] };
+type Entry = PinTarget & { title: string; body: string; updatedAt: string; assetIds?: string[] };
 
 export function ScenePinMarkers({ scene, onOpen }: { scene: Scene; onOpen?: (id: string) => void }) {
   return <>{scene.mapPins?.map((pin) => {
@@ -28,8 +33,8 @@ export function ScenePinMarkers({ scene, onOpen }: { scene: Scene; onOpen?: (id:
 
 export function ScenePinDialog(props: ScenePinProps & { scene: Scene; assets: MapAsset[]; selection: PinSelection; onClose(): void }) {
   const entries: Entry[] = [
-    ...(props.pinJournals ?? []).filter((entry) => entry.kind !== "folder").map((entry): Entry => ({ targetType: "journal", targetId: entry.id, title: entry.title, body: entry.body })),
-    ...(props.pinHandouts ?? []).map((entry): Entry => ({ targetType: "handout", targetId: entry.id, title: entry.title, body: entry.body, assetIds: entry.assetIds })),
+    ...(props.pinJournals ?? []).filter((entry) => entry.kind !== "folder").map((entry): Entry => ({ targetType: "journal", targetId: entry.id, title: entry.title, body: entry.body, updatedAt: entry.updatedAt })),
+    ...(props.pinHandouts ?? []).map((entry): Entry => ({ targetType: "handout", targetId: entry.id, title: entry.title, body: entry.body, updatedAt: entry.updatedAt, assetIds: entry.assetIds })),
   ];
   const selection = props.selection;
   const pin = selection.kind === "open" ? props.scene.mapPins?.find((item) => item.id === selection.id) : undefined;
@@ -51,6 +56,8 @@ export function ScenePinDialog(props: ScenePinProps & { scene: Scene; assets: Ma
     {editing && props.onSavePin ? <PinForm scene={props.scene} entries={entries} pin={pin} target={entry} point={selection.kind === "add" ? selection.point : undefined} onSave={props.onSavePin} onClose={props.onClose} />
       : entry && <><h3>{entry.title}</h3><MarkdownDocument source={entry.body} label={entry.title} />
         {entry.assetIds && <HandoutAssetGallery assets={props.assets.filter((asset) => entry.assetIds!.includes(asset.id))} />}
+        {pin && props.presentationMembers && (entry.targetType === "journal" ? props.canPresentJournalPin : props.canPresentHandoutPin) && <PresentToPlayers key={pin.id} campaignId={props.scene.campaignId} members={props.presentationMembers}
+          target={{ targetType: entry.targetType, targetId: entry.targetId, expectedUpdatedAt: entry.updatedAt, pinId: pin.id, sceneId: props.scene.id }} />}
         {props.onSavePin && <button type="button" className="ghost-button" onClick={() => setEditing(true)}>Edit map pin</button>}</>}
   </dialog>;
 }

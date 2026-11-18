@@ -100,6 +100,13 @@ export const routes = {
     `/api/v1/campaigns/${pathPart(campaignId)}/ownership-transfer`,
   campaignDuplicate: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/duplicate`,
+  characterClaims: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/character-claims`,
+  characterClaimOffer: (campaignId: string, actorId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/actors/${pathPart(actorId)}/claim-offer`,
+  characterClaim: (campaignId: string, actorId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/actors/${pathPart(actorId)}/claim`,
+  partyRollRequests: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/party-roll-requests`,
+  partyRollChoices: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/party-roll-requests/choices`,
+  answerPartyRoll: (campaignId: string, requestId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/party-roll-requests/${pathPart(requestId)}/actors/${pathPart(actorId)}/roll`,
   characterTransfers: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/character-transfers`,
   characterTransferCreate: (campaignId: string, actorId: string) =>
@@ -257,6 +264,7 @@ export const routes = {
     `/api/v1/journal/${pathPart(entryId)}/history`,
   journalCanonReview: (entryId: string) =>
     `/api/v1/journal/${pathPart(entryId)}/canon-review`,
+  presentations: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/presentations`,
   handouts: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/handouts`,
   handout: (handoutId: string) => `/api/v1/handouts/${pathPart(handoutId)}`,
@@ -270,6 +278,9 @@ export const routes = {
   chatExport: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/chat/export`,
   dice: "/api/v1/dice/roll",
+  rollableTables: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/rollable-tables`,
+  rollableTable: (campaignId: string, tableId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/rollable-tables/${pathPart(tableId)}`,
+  drawRollableTable: (campaignId: string, tableId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/rollable-tables/${pathPart(tableId)}/draw`,
   diceMacros: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/dice-macros`,
   campaignAudio: (campaignId: string) =>
@@ -780,6 +791,12 @@ const endpointSpecs = [
   ["DELETE", "/api/v1/campaigns/{campaignId}/members/{memberId}"],
   ["POST", "/api/v1/campaigns/{campaignId}/ownership-transfer"],
   ["POST", "/api/v1/campaigns/{campaignId}/duplicate"],
+  ["GET", "/api/v1/campaigns/{campaignId}/character-claims"],
+  ["POST", "/api/v1/campaigns/{campaignId}/actors/{actorId}/claim-offer"],
+  ["POST", "/api/v1/campaigns/{campaignId}/actors/{actorId}/claim"],
+  ["GET", "/api/v1/campaigns/{campaignId}/party-roll-requests/choices"],
+  ["POST", "/api/v1/campaigns/{campaignId}/party-roll-requests"],
+  ["POST", "/api/v1/campaigns/{campaignId}/party-roll-requests/{requestId}/actors/{actorId}/roll"],
   ["GET", "/api/v1/campaigns/{campaignId}/character-transfers"],
   ["POST", "/api/v1/campaigns/{campaignId}/actors/{actorId}/transfers"],
   ["POST", "/api/v1/campaigns/{campaignId}/character-transfers/{transferId}/accept"],
@@ -902,6 +919,7 @@ const endpointSpecs = [
   ["GET", "/api/v1/journal/{entryId}/backlinks"],
   ["GET", "/api/v1/journal/{entryId}/history"],
   ["POST", "/api/v1/journal/{entryId}/canon-review"],
+  ["POST", "/api/v1/campaigns/{campaignId}/presentations"],
   ["GET", "/api/v1/campaigns/{campaignId}/handouts"],
   ["POST", "/api/v1/campaigns/{campaignId}/handouts"],
   ["GET", "/api/v1/handouts/{handoutId}"],
@@ -918,6 +936,11 @@ const endpointSpecs = [
   ["GET", "/api/v1/campaigns/{campaignId}/rolls/{rollId}/verify"],
   ["GET", "/api/v1/campaigns/{campaignId}/snapshot"],
   ["GET", "/api/v1/campaigns/{campaignId}/chat/export"],
+  ["GET", "/api/v1/campaigns/{campaignId}/rollable-tables"],
+  ["POST", "/api/v1/campaigns/{campaignId}/rollable-tables"],
+  ["PATCH", "/api/v1/campaigns/{campaignId}/rollable-tables/{tableId}"],
+  ["DELETE", "/api/v1/campaigns/{campaignId}/rollable-tables/{tableId}"],
+  ["POST", "/api/v1/campaigns/{campaignId}/rollable-tables/{tableId}/draw"],
   ["GET", "/api/v1/campaigns/{campaignId}/dice-macros"],
   ["POST", "/api/v1/campaigns/{campaignId}/dice-macros"],
   ["GET", "/api/v1/campaigns/{campaignId}/audio"],
@@ -5120,6 +5143,7 @@ const componentSchemas = {
         enum: ["standard", "player_authoring", "ai_assisted", "assistant_ops"],
       },
       starterContent: { type: "boolean" },
+      starterAdventure: { type: "string", enum: ["ember-vault"] },
     },
   },
   CampaignSnapshotBundled: {
@@ -5248,6 +5272,7 @@ const componentSchemas = {
       "chat",
       "rolls",
       "diceMacros",
+      "rollableTables",
       "encounters",
       "combats",
       "proposals",
@@ -5276,6 +5301,7 @@ const componentSchemas = {
       assets: arrayOf(schemaRef("MapAsset")),
       actors: arrayOf(schemaRef("Actor")),
       calculationOverrides: arrayOf(schemaRef("CalculationOverride")),
+      partyRollRequests: arrayOf(schemaRef("PartyRollRequest")),
       characterTransfers: arrayOf(schemaRef("CharacterTransfer")),
       items: arrayOf(schemaRef("Item")),
       journals: arrayOf(schemaRef("JournalEntry")),
@@ -5283,6 +5309,7 @@ const componentSchemas = {
       chat: arrayOf(schemaRef("ChatMessage")),
       rolls: arrayOf(schemaRef("DiceRoll")),
       diceMacros: arrayOf(schemaRef("DiceMacro")),
+      rollableTables: arrayOf(schemaRef("RollableTable")),
       encounters: arrayOf(schemaRef("Encounter")),
       combats: arrayOf(schemaRef("Combat")),
       proposals: arrayOf(schemaRef("Proposal")),
@@ -5306,6 +5333,34 @@ const componentSchemas = {
       rulesProfile: schemaRef("CampaignRulesProfile"),
     },
   },
+  CharacterClaimOption: {
+    type: "object", additionalProperties: false, required: ["actorId", "name", "updatedAt", "offered"],
+    properties: { actorId: idSchema, name: stringSchema, updatedAt: dateTimeSchema, offered: { type: "boolean" } },
+  },
+  CharacterClaimResult: {
+    type: "object", additionalProperties: false, required: ["actorId", "sceneId", "tokenId"],
+    properties: { actorId: idSchema, sceneId: idSchema, tokenId: idSchema },
+  },
+  PartyRollChoice: {
+    type: "object", required: ["actorId", "actorName", "rolls"],
+    properties: { actorId: idSchema, actorName: { type: "string" }, rolls: arrayOf({
+      type: "object", required: ["id", "label"], properties: { id: idSchema, label: { type: "string" } },
+    }) },
+  },
+  PartyRollRequest: {
+    type: "object", required: ["id", "campaignId", "rollId", "label", "recipients", "createdAt", "updatedAt"],
+    properties: {
+      ...idTimestampProperties, campaignId: idSchema, rollId: idSchema, label: { type: "string" },
+      recipients: arrayOf({
+        type: "object", required: ["actorId", "actorName", "userId"],
+        properties: {
+          actorId: idSchema, actorName: { type: "string" }, userId: idSchema, unavailable: { type: "boolean" },
+          result: { type: "object", required: ["id", "formula", "total"], properties: { id: idSchema, formula: { type: "string" }, total: { type: "number" } } },
+        },
+      }),
+    },
+  },
+  PartyRollReceipt: { type: "object", required: ["id"], properties: { id: idSchema } },
   CharacterTransfer: {
     type: "object",
     additionalProperties: false,
@@ -6796,6 +6851,7 @@ const componentSchemas = {
       visibility: { type: "string", enum: ["public", "gm_only", "whisper"] },
       recipientUserIds: arrayOf(idSchema),
       rollId: idSchema,
+      rollableTableId: idSchema,
       replyToMessageId: idSchema,
       moderationStatus: {
         type: "string",
@@ -7220,6 +7276,8 @@ const componentSchemas = {
       campaignId: idSchema,
       worldId: idSchema,
       systemId: idSchema,
+      characterClaimOffered: { type: "boolean" },
+      characterClaimOfferedByUserId: idSchema,
       ownerUserId: idSchema,
       type: stringSchema,
       name: stringSchema,
@@ -8373,6 +8431,7 @@ const componentSchemas = {
     properties: {
       expectedUpdatedAt: { type: "string", format: "date-time" },
       sceneId: idSchema,
+      encounterId: idSchema,
       participants: arrayOf(schemaRef("CombatStartParticipantRequest")),
       manualTurnOrder: { type: "boolean" },
     },
@@ -8732,6 +8791,24 @@ const componentSchemas = {
       },
       messages: arrayOf(schemaRef("ChatMessage")),
     },
+  },
+  RollableTableFields: {
+    type: "object",
+    properties: {
+      name: { type: "string", minLength: 1, maxLength: 100 },
+      category: { type: "string", enum: ["loot", "encounter", "rumor"] },
+      visibility: { type: "string", enum: ["public", "gm_only"] },
+      entries: { type: "array", minItems: 1, maxItems: 100, items: {
+        type: "object", required: ["text", "weight"],
+        properties: { text: { type: "string", minLength: 1, maxLength: 500 }, weight: { type: "integer", minimum: 1, maximum: 10000 } },
+      } },
+    },
+  },
+  RollableTableInput: {
+    allOf: [schemaRef("RollableTableFields"), { type: "object", required: ["name", "category", "visibility", "entries"] }],
+  },
+  RollableTable: {
+    allOf: [schemaRef("RollableTableInput"), { type: "object", required: ["id", "campaignId", "createdAt", "updatedAt"], properties: { ...idTimestampProperties, campaignId: idSchema } }],
   },
   DiceMacro: {
     type: "object",
@@ -14157,6 +14234,35 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       "413": jsonResponse("Campaign assets exceed the configured duplication limit", schemaRef("ErrorResponse")),
     },
   },
+  "GET /api/v1/campaigns/{campaignId}/character-claims": {
+    responses: { "200": jsonResponse("Eligible character choices for the current member", arrayOf(schemaRef("CharacterClaimOption"))) },
+  },
+  "POST /api/v1/campaigns/{campaignId}/actors/{actorId}/claim-offer": {
+    parameters: [idempotencyKeyParameter],
+    requestBody: jsonRequestBody({ type: "object", additionalProperties: false, required: ["offered", "expectedUpdatedAt"], properties: { offered: { type: "boolean" }, expectedUpdatedAt: dateTimeSchema } }),
+    responses: { "200": jsonResponse("Updated player character offer", schemaRef("CharacterClaimOption")), "409": jsonResponse("Character changed or is ineligible", schemaRef("ErrorResponse")) },
+  },
+  "POST /api/v1/campaigns/{campaignId}/actors/{actorId}/claim": {
+    parameters: [idempotencyKeyParameter],
+    requestBody: jsonRequestBody({ type: "object", additionalProperties: false, required: ["expectedUpdatedAt"], properties: { expectedUpdatedAt: dateTimeSchema } }),
+    responses: { "200": jsonResponse("Claimed character and live token", schemaRef("CharacterClaimResult")), "409": jsonResponse("Character changed or is unavailable", schemaRef("ErrorResponse")) },
+  },
+  "GET /api/v1/campaigns/{campaignId}/party-roll-requests/choices": {
+    responses: { "200": jsonResponse("Player characters and available sheet checks", arrayOf(schemaRef("PartyRollChoice"))) },
+  },
+  "POST /api/v1/campaigns/{campaignId}/party-roll-requests": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
+    requestBody: jsonRequestBody({ type: "object", required: ["rollId", "actorIds"], properties: {
+      rollId: idSchema, actorIds: { type: "array", items: idSchema, minItems: 1, maxItems: 100, uniqueItems: true },
+    } }),
+    responses: {
+      "201": jsonResponse("Created or replayed party roll request ID", schemaRef("PartyRollReceipt")),
+      "409": jsonResponse("This key identifies a different party roll request", schemaRef("ErrorResponse")),
+    },
+  },
+  "POST /api/v1/campaigns/{campaignId}/party-roll-requests/{requestId}/actors/{actorId}/roll": {
+    responses: { "200": jsonResponse("Recorded roll ID, including on retry", schemaRef("PartyRollReceipt")) },
+  },
   "GET /api/v1/campaigns/{campaignId}/character-transfers": {
     responses: { "200": jsonResponse("Visible pending and resolved character transfers", arrayOf(schemaRef("CharacterTransfer"))) },
   },
@@ -15089,6 +15195,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   },
   "GET /api/v1/assets/{assetId}/blob": {
     parameters: [
+      { name: "presentationId", in: "query", required: false, description: "Transient image access scoped to the receiving player's live session and connection.", schema: idSchema },
       {
         name: "userId",
         in: "query",
@@ -15555,6 +15662,28 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
         schemaRef("ChatExport"),
       ),
     },
+  },
+  "GET /api/v1/campaigns/{campaignId}/rollable-tables": {
+    responses: { "200": jsonResponse("Visible weighted tables", arrayOf(schemaRef("RollableTable"))) },
+  },
+  "POST /api/v1/campaigns/{campaignId}/rollable-tables": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("RollableTableInput")),
+    responses: { "200": jsonResponse("Created table", schemaRef("RollableTable")) },
+  },
+  "PATCH /api/v1/campaigns/{campaignId}/rollable-tables/{tableId}": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody(schemaRef("RollableTableFields")),
+    responses: { "200": jsonResponse("Updated table", schemaRef("RollableTable")) },
+  },
+  "DELETE /api/v1/campaigns/{campaignId}/rollable-tables/{tableId}": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    responses: { "200": jsonResponse("Removed table", schemaRef("RollableTable")) },
+  },
+  "POST /api/v1/campaigns/{campaignId}/rollable-tables/{tableId}/draw": {
+    parameters: [{ ...idempotencyKeyParameter, required: true }],
+    requestBody: jsonRequestBody({ type: "object", required: ["visibility"], properties: { visibility: { type: "string", enum: ["public", "gm_only"] } } }),
+    responses: { "200": jsonResponse("Persisted chat result", schemaRef("ChatMessage")) },
   },
   "GET /api/v1/campaigns/{campaignId}/dice-macros": {
     responses: {
@@ -16967,6 +17096,14 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       "409": jsonResponse("Journal entry changed after delete was prepared", schemaRef("StaleWriteConflictResponse")),
     },
   },
+  "POST /api/v1/campaigns/{campaignId}/presentations": {
+    description: "Show the saved entry to selected online player seats for five minutes. For a linked pin, send its sceneId and pinId alongside the target. Journal entries require a pin. Presentations do not change the saved audience or replay on reconnect.",
+    requestBody: jsonRequestBody({ type: "object", additionalProperties: false, required: ["targetType", "targetId", "expectedUpdatedAt", "recipientUserIds"],
+      properties: { targetType: { type: "string", enum: ["handout", "journal"] }, targetId: idSchema, expectedUpdatedAt: { type: "string", format: "date-time" },
+        sceneId: idSchema, pinId: idSchema, recipientUserIds: { type: "array", minItems: 1, maxItems: 100, uniqueItems: true, items: idSchema } } }),
+    responses: { "200": jsonResponse("Players reached by this live presentation", { type: "object", additionalProperties: false, required: ["deliveredUserIds"], properties: { deliveredUserIds: arrayOf(idSchema) } }),
+      "409": jsonResponse("Content changed before presentation", schemaRef("ErrorResponse")) },
+  },
   "GET /api/v1/campaigns/{campaignId}/handouts": {
     responses: {
       "200": jsonResponse(
@@ -17227,6 +17364,7 @@ function openApiParameterKey(parameter: OpenApiParameter): string {
 }
 
 const sharedRevisionRoutePatterns: ReadonlyArray<{ methods: ReadonlySet<HttpMethod>; pattern: RegExp }> = [
+  { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/campaigns\/[^/]+\/rollable-tables\/[^/]+$/ },
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/[^/]+\/(?:worlds|scenes|scene-duplications|actors|items|handouts|encounters|combats(?:\/start)?)$/ },
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/scenes\/[^/]+\/(?:tokens|encounter-monster-placements|compendium-monster-placements(?:\/[^/]+\/history)?)$/ },
   { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/campaigns\/[^/]+$/ },

@@ -186,7 +186,7 @@ describe("workspace-bound async operations", () => {
   it("commits an accepted invite session before loading the invited campaign", () => {
     const body = appSource.slice(appSource.indexOf("async function acceptInvite()"), appSource.indexOf("async function createCampaignFromSetup"));
     expect(body.indexOf("await commitDeferredCredential(result")).toBeGreaterThanOrEqual(0);
-    expect(body.indexOf("await commitDeferredCredential(result")).toBeLessThan(body.indexOf("await refresh(result.campaign.id)"));
+    expect(body.indexOf("await commitDeferredCredential(result")).toBeLessThan(body.indexOf('await refresh(result.campaign.id, "")'));
   });
 
   it("clears account secrets and scopes MFA completions to the active session", () => {

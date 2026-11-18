@@ -1,6 +1,6 @@
-import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AudioTrack, AuditLog, CalculationOverride, Campaign, CampaignMember, CampaignPresence, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, DiceRollFairness, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SystemManifestSchemas, SystemManifestIdentity, DeclarativeSystemDefinition, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot, WorldRecord, WorldRelation } from "@open-tabletop/core";
+import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AudioTrack, AuditLog, CalculationOverride, Campaign, CampaignMember, CampaignPresence, ChatMessage, Combat, ContentImportBatch, RollableTable, DiceMacro, DiceRoll, DiceRollFairness, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SystemManifestSchemas, SystemManifestIdentity, DeclarativeSystemDefinition, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot, WorldRecord, WorldRelation } from "@open-tabletop/core";
 import { ApiCompatibilityError, apiBuildFingerprintIssue, apiCompatibilityIssue, type ApiHealthIdentity } from "./api-compatibility.js";
-import type { AdminAiThreadSummary, AdminAiToolCallSummary, UniversalVttImportInput, UniversalVttImportResult } from "@open-tabletop/api-contracts";
+import type { PartyRollRequest, AdminAiThreadSummary, AdminAiToolCallSummary, UniversalVttImportInput, UniversalVttImportResult } from "@open-tabletop/api-contracts";
 
 export type { UniversalVttImportInput, UniversalVttImportResult } from "@open-tabletop/api-contracts";
 
@@ -693,6 +693,7 @@ export interface CampaignSessionInfo {
 }
 
 export interface Snapshot {
+  membershipScope?: { campaignId: string; userId: string; sessionEpoch: number };
   session?: SessionInfo;
   workspaceDefaults?: OrganizationWorkspace;
   organizations: OrganizationWorkspaceInfo[];
@@ -719,8 +720,10 @@ export interface Snapshot {
   chat: ChatMessage[];
   rolls: DiceRoll[];
   diceMacros: DiceMacro[];
+  rollableTables?: RollableTable[];
   audioTracks: AudioTrack[];
   encounters: Encounter[];
+  partyRollRequests?: PartyRollRequest[];
   campaignSessions?: CampaignSessionInfo[];
   combats: Combat[];
   combatAudit: AuditLog[];
@@ -764,7 +767,9 @@ interface CampaignSnapshotPayload {
   chat: ChatMessage[];
   rolls: DiceRoll[];
   diceMacros: DiceMacro[];
+  rollableTables?: RollableTable[];
   encounters: Encounter[];
+  partyRollRequests?: PartyRollRequest[];
   campaignSessions?: CampaignSessionInfo[];
   combats: Combat[];
   proposals: Proposal[];
@@ -3439,6 +3444,7 @@ export async function verifyDiceRoll(campaignId: string, rollId: string): Promis
 
 export async function loadSnapshot(campaignId?: string, sceneId?: string): Promise<Snapshot> {
   const snapshotHeaders = await sessionHeaders();
+  const snapshotSessionEpoch = getSessionTransportEpoch();
   const snapshotGet = async <T,>(path: string): Promise<T> => {
     const response = await apiFetch(`${baseUrl}${path}`, {
       headers: snapshotHeaders
@@ -3538,6 +3544,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     organizationInvites,
     campaigns,
     members,
+    membershipScope: { campaignId: selectedCampaignId, userId: session.user.id, sessionEpoch: snapshotSessionEpoch },
     presences: campaignSnapshot.presences,
     eventSequence: campaignSnapshot.eventSequence ?? 0,
     realtimeRecovery: campaignSnapshot.realtimeRecovery ?? "refetch_snapshot_on_gap",
@@ -3557,8 +3564,10 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     chat: campaignSnapshot.chat,
     rolls: campaignSnapshot.rolls,
     diceMacros: campaignSnapshot.diceMacros,
+    rollableTables: campaignSnapshot.rollableTables ?? [],
     audioTracks: displayAudioTracks,
     encounters: campaignSnapshot.encounters,
+    partyRollRequests: campaignSnapshot.partyRollRequests ?? [],
     campaignSessions: campaignSnapshot.campaignSessions ?? [],
     combats: campaignSnapshot.combats,
     combatAudit,

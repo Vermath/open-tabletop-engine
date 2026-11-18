@@ -1,3 +1,4 @@
+import { campaignCharacterClaimRoster, characterClaimOption } from "./character-claims.js";
 import { dnd5eSrdMonsterCatalog } from "@open-tabletop/system-sdk";
 import { registerCompendiumPlacementRoutes } from "./compendium-placement-routes.js";
 import { clampScenePoint, sceneGridSize, sceneGridOrigin, snapScenePointToGrid, snapTokenCenterToGrid } from "@open-tabletop/core";
@@ -7,7 +8,7 @@ import { basename, extname, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { aiCitationWarnings, buildPermissionFilteredContext, filterPermissionFilteredContextByScopes, validateAiCitationClaims, type AiBoardCaptureResult, type AiMessage, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiReasoningEffort, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
-import { apiContractPolicy, apiVersion, apiVersionHeader, openApiSpec, type AdminAiThreadSummary, type AdminAiToolCallSummary } from "@open-tabletop/api-contracts";
+import { apiContractPolicy, apiVersion, apiVersionHeader, openApiSpec, type PresentContentRequest, type AdminAiThreadSummary, type AdminAiToolCallSummary } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, CodexAppServerWebSocketTransport, LoopbackCodexTransport, stopLocalCodexAppServers } from "@open-tabletop/codex-app-server-provider";
 import {
   aiMemoryFactStatus,
@@ -74,6 +75,7 @@ import {
   type ContentImportEntityKind,
   type ContentImportSource,
   type DiceMacro,
+  type RollableTable,
   type DiceRoll,
   type DiceRollFairness,
   type EmailOutboxMessage,
@@ -81,6 +83,7 @@ import {
   type EncounterMonsterPlacementBatchInput,
   type EncounterMonsterPlacementBatchResult,
   type EncounterMonsterPlacementResult,
+  type PartyRollRequest,
   type EngineEvent,
   type EngineState,
   type FogHistoryEntry,
@@ -302,10 +305,11 @@ import { assertDeclarativeArchiveDependencies, declarativeArchiveSystemRequireme
 import { declarativeSystemManifestChecksum, DeclarativeRuntimeError } from "./declarative-system-runtime.js";
 import { assertDeclarativeSystemRecord, assertDeclarativeSystemStateCandidate, DeclarativeSystemStateError, resolvePinnedDeclarativeSystem } from "./declarative-system-state.js";
 import { advanceDeclarativeBindingRevisions, advanceImportedDeclarativeBindingRevisions, declarativeRuntimeForActor, initialDeclarativeBinding, installedDeclarativeIdentity, isDeclarativeSystem, sameSystemIdentity } from "./declarative-system-host.js";
+import type { RealtimePresentation } from "@open-tabletop/core";
 import { RealtimeHub, type RealtimeClient } from "./realtime.js";
 import { createRequestLoggerOptions, type RequestLogStream } from "./request-logging.js";
-import { FileStateStore, demoSeedEnabled, type StateStore } from "./store.js";
-import { seedDemoPresentation } from "./demo-presentation.js";
+import { FileStateStore, MemoryStateStore, demoSeedEnabled, type StateStore } from "./store.js";
+import { buildEmberVaultStarter, seedDemoPresentation } from "./demo-presentation.js";
 import { linkEncounterToLiveSession, resolveSingleLiveCampaignSession } from "./encounter-session-link.js";
 import type { AssetSnapshotIdentity, AssetSnapshotProvider, SqliteBackupOptions, SqliteRestoreDrillOptions } from "./sqlite-store.js";
 import { assetMetadataInventoryForAssets } from "./sqlite-store.js";
@@ -341,6 +345,8 @@ import { activeCombatForTypedDamage, dndTypedDamageCombatantChanges } from "./dn
 import { registerSceneDelegationRoutes } from "./scene-delegation-routes.js";
 import { exceedsSceneVisionBudget, MAX_SCENE_LIGHTS, MAX_SCENE_WALLS, SceneVisionBudgetError } from "./scene-vision-budget.js";
 import { registerUniversalVttImportRoute } from "./universal-vtt-import.js";
+import { partyRollChangedEvent, partyRollForUser, registerPartyRollRoutes, replacePartyRollResult } from "./party-roll-routes.js";
+import { drawTableEntry, publishTableChange, validatedTable, visibleRollableTables } from "./rollable-tables.js";
 import { registerCampaignSessionRoutes } from "./campaign-session-routes.js";
 import { registerCampaignWebhookRoutes } from "./campaign-webhook-routes.js";
 import { CAMPAIGN_WEBHOOK_QUEUE_MAX_PENDING_DELIVERIES, CAMPAIGN_WEBHOOK_SUBSCRIPTION_LIMIT_PER_CAMPAIGN, createCampaignWebhookDelivery, pruneCampaignWebhookCampaignLedger, pruneCampaignWebhookDeliveryLedger, pruneCampaignWebhookLedgers } from "./campaign-webhook-ledger.js";
@@ -639,6 +645,7 @@ type CampaignPermissionTemplateId = "standard" | "player_authoring" | "ai_assist
 interface CampaignCreateBody extends Partial<Campaign> {
   permissionTemplate?: unknown;
   starterContent?: unknown;
+  starterAdventure?: "ember-vault";
 }
 
 type CampaignPatchBody = Partial<Pick<Campaign, "name" | "description" | "defaultSystemId" | "visibility" | "rulesProfile">> & { expectedUpdatedAt?: unknown };
@@ -808,6 +815,7 @@ interface CombatStartParticipantBody {
 
 interface CombatStartBody {
   sceneId?: unknown;
+  encounterId?: string;
   participants?: unknown;
   manualTurnOrder?: unknown;
   expectedUpdatedAt?: unknown;
@@ -1220,7 +1228,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     for (const client of unique.values()) publishPresenceAfterRemoval(client);
   };
   const disconnectRealtimeSession = (sessionId: string) => publishRealtimeRemovals(hub.disconnectSession(sessionId));
-  const disconnectUnauthorizedRealtimeClients = () => publishRealtimeRemovals(hub.disconnectWhere((client) => !realtimeClientAuthorizationIsCurrent(store, client)));
+  const disconnectUnauthorizedRealtimeClients = () => publishRealtimeRemovals(hub.disconnectWhere((client) => {
+    if (!realtimeClientAuthorizationIsCurrent(store, client)) return true;
+    const grant = client.presentation;
+    if (grant && !store.state.members.some((member) => member.campaignId === client.campaignId && member.userId === client.userId && member.role === "player")) {
+      delete client.presentation;
+      try {
+        client.send(JSON.stringify({ channel: "presentation.revoked", campaignId: client.campaignId, id: grant.id }));
+      } catch { return true; }
+    }
+    return false;
+  }));
   let pluginEventQueue = Promise.resolve();
   let pendingPluginEventCount = 0;
   let webhookEventQueue = Promise.resolve();
@@ -3326,7 +3344,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const requestedSceneId = url.searchParams.get("sceneId") ?? undefined;
     const activeSceneId = requestedSceneId && store.state.scenes.some((scene) => scene.id === requestedSceneId && scene.campaignId === campaignId && canReadSceneRecord(store, userId, scene)) ? requestedSceneId : undefined;
     const previouslyConnected = hub.countMatching({ campaignId, userId }) > 0;
-    const client: RealtimeClient = { campaignId, userId, sessionId: session?.id, connectedAt, lastSeenAt: connectedAt, activeSceneId, send: (data: string) => socket.send(data), close: () => socket.close() };
+    const client: RealtimeClient = { campaignId, userId, sessionId: session?.id, connectedAt, lastSeenAt: connectedAt, activeSceneId, isOpen: () => socket.readyState === socket.OPEN, send: (data: string) => socket.send(data), close: () => socket.close() };
     hub.add(client);
     socket.send(JSON.stringify({ channel: "presence", type: "presence.snapshot", campaignId, timestamp: connectedAt, presences: campaignPresence(campaignId) } satisfies RealtimePresenceEnvelope));
     const joinedPresence = presenceForUser(campaignId, userId)!;
@@ -3338,7 +3356,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       } catch {
         return;
       }
-      if (!isRecord(message) || message.type !== "presence.heartbeat") return;
+      if (!isRecord(message)) return;
+      if (message.type === "presentation.dismiss" && client.presentation?.id === message.id) {
+        delete client.presentation;
+        return;
+      }
+      if (message.type !== "presence.heartbeat") return;
       if (!realtimeClientAuthorizationIsCurrent(store, client)) {
         if (client.sessionId) disconnectRealtimeSession(client.sessionId);
         else removeRealtimeClient(client);
@@ -3379,7 +3402,41 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (systemBindings) Object.assign(campaign, { systemBindings });
     const member = createTimestamped("mem", { campaignId: campaign.id, userId, role: "owner" as const });
     const starterEvents: EngineEvent[] = [];
-    if (body.starterContent === true) {
+    if (body.starterAdventure === "ember-vault") {
+      if (campaign.defaultSystemId !== DND_5E_SRD_SYSTEM_ID) return badRequest(reply, "Ember Vault requires the D&D 5.5e SRD rules system");
+      const staged = new MemoryStateStore(emptyState());
+      // Keep every attempted write, including originals or renditions whose provider writes then throws.
+      // Request finalization rolls them back with the domain records on failure or disconnect.
+      const attempted: MapAsset[] = [];
+      const transaction: ArchiveAssetRestoreTransaction = {
+        get restoredFiles() { return attempted.length; },
+        commit: async () => {},
+        rollback: async () => {
+          const results = await Promise.allSettled(attempted.map((asset) => assetStorage.delete(asset)));
+          const failures = results.filter((result) => result.status === "rejected");
+          if (failures.length) throw new AggregateError(failures.map((failure) => failure.reason), "Failed to remove staged Ember Vault assets");
+        },
+      };
+      Reflect.set(request, archiveImportAssetRestoreSymbol, transaction);
+      const writer: Pick<AssetStorage, "put"> = {
+        put: async (asset, bytes) => {
+          attempted.push(asset);
+          asset.storage = await assetStorage.put(asset, bytes);
+          return asset.storage;
+        },
+      };
+      const scene = await buildEmberVaultStarter(staged, campaign, (id, name, bytes) => ingestVaultAsset(staged, writer, id, name, bytes, "starter"), createTemplateItems);
+      appendSceneActivationHistory(scene, { activatedAt: scene.createdAt, activatedByUserId: userId, deactivatedSceneIds: [], source: "create" });
+      store.state.assets.push(...staged.state.assets);
+      store.state.scenes.push(scene);
+      store.state.tokens.push(...staged.state.tokens);
+      store.state.actors.push(...staged.state.actors);
+      store.state.items.push(...staged.state.items);
+      migrateDnd5eSrdStoredArmorClassIntent(store.state, { actorIds: staged.state.actors.map((actor) => actor.id), initiatedByUserId: userId });
+      store.state.encounters.push(...staged.state.encounters);
+      store.state.handouts.push(...staged.state.handouts);
+      starterEvents.push(createEvent({ campaignId: campaign.id, type: "scene.created", targetId: scene.id, payload: scene }));
+    } else if (body.starterContent === true) {
       const activatedAt = nowIso();
       const starterScene = createTimestamped("scn", { campaignId: campaign.id, name: "First Session", width: 1200, height: 800, gridType: "square" as const, gridSize: 50, active: true, sortOrder: 1, fog: [], fogHistory: [], walls: [], lights: [], annotations: [], metadata: {} }) satisfies Scene;
       appendSceneActivationHistory(starterScene, { activatedAt, activatedByUserId: userId, deactivatedSceneIds: [], source: "create" });
@@ -3679,6 +3736,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return { token: outcome.sessionToken, session: publicSession(outcome.session), user: outcome.user, serverAdmin: outcome.serverAdmin, invite: outcome.invite, membership: publicCampaignMember(outcome.membership), campaign: outcome.campaign };
   });
 
+  registerPartyRollRoutes(app, {
+    store, broadcast, nextRevisionTimestamp,
+    requirePermission: (reply, headers, campaignId, permission) => requireCampaignPermission(store, reply, headers, campaignId, permission),
+    currentUserId: (headers) => currentUserId(store, headers)!,
+    quickRolls: (actor) => systemQuickRollsForStore(store, actor, actorItems(store, actor)),
+  });
+
   registerCampaignSessionRoutes(app, {
     store,
     requireCampaignPermission: (reply, headers, campaignId, permission) => requireCampaignPermission(store, reply, headers, campaignId, permission),
@@ -3749,7 +3813,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       throw error;
     }
     archive.manifest.systemRequirements = systemRequirementsForCampaign(store, source.id);
-    const regenerated = archiveWithRegeneratedIds(archive, { userId, organizationId: workspace.id });
+    const authorizedSourceOffers = new Set(store.state.actors.filter((actor) => actor.campaignId === source.id && characterOfferIsAuthorized(store, actor)).map((actor) => actor.id));
+    const regenerated = archiveWithRegeneratedIds(archive, { userId, organizationId: workspace.id, authorizedSourceOffers });
     const portable = secureArchiveIdentityForImport(store.state, regenerated, { userId, organizationId: workspace.id });
     const copiedCampaign = portable.data.campaigns[0];
     if (!copiedCampaign) return badRequest(reply, "Campaign archive did not contain a campaign record");
@@ -4414,7 +4479,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return asset;
   });
 
-  app.get<{ Params: { assetId: string }; Querystring: { userId?: string; sessionToken?: string; expiresAt?: string; signature?: string; disposition?: "inline" | "attachment"; variant?: "thumbnail" | "optimized" } }>("/api/v1/assets/:assetId/blob", async (request, reply) => {
+  app.get<{ Params: { assetId: string }; Querystring: { userId?: string; sessionToken?: string; expiresAt?: string; signature?: string; presentationId?: string; disposition?: "inline" | "attachment"; variant?: "thumbnail" | "optimized" } }>("/api/v1/assets/:assetId/blob", async (request, reply) => {
     const asset = store.state.assets.find((item) => item.id === request.params.assetId);
     if (!asset) return notFound(reply, "Asset not found");
     const accessMode = request.query.signature ? "signed" : "session";
@@ -4434,12 +4499,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         appendAssetDeliveryAuditLog(store, asset, { status: "denied", accessMode, reason: "missing_permission_or_active_organization" });
         return allowed;
       }
-      if (!canReadAssetRecord(store, userId, asset)) {
+      const presentationId = request.query.presentationId;
+      const sessionId = presentationId ? sessionFromRequest(store, request.url, request.headers)?.id : undefined;
+      const canView = presentationId ? hub.clientsMatching({ campaignId: asset.campaignId, userId }).some((client) => {
+        const grant = client.presentation;
+        return grant?.id === presentationId && client.sessionId === sessionId && client.isOpen?.() && realtimeClientAuthorizationIsCurrent(store, client)
+          && grant.expiresAt > Date.now() && grant.assetIds.has(asset.id) && isPresentationImage(asset)
+          && store.state.members.some((member) => member.campaignId === asset.campaignId && member.userId === userId && member.role === "player")
+          && store.state.handouts.some((item) => item.id === grant.handoutId && item.campaignId === asset.campaignId && item.assetIds.includes(asset.id));
+      }) : canReadAssetRecord(store, userId, asset);
+      if (!canView) {
         appendAssetDeliveryAuditLog(store, asset, { status: "denied", accessMode, reason: "asset_not_visible" });
         return notFound(reply, "Asset not found");
       }
     }
-    const cacheControl = signedAccess ? signedAssetCacheControl(request.query.expiresAt) : "private, max-age=60";
+    const cacheControl = request.query.presentationId ? "private, no-store" : signedAccess ? signedAssetCacheControl(request.query.expiresAt) : "private, max-age=60";
     const contentDisposition = request.query.disposition === "attachment" ? `attachment; filename="${safeDownloadFileName(asset.name)}"` : undefined;
     const requestedRendition = request.query.variant ? asset.renditions?.find((rendition) => rendition.kind === request.query.variant) : undefined;
     let deliveryAsset = requestedRendition ? assetRecordForRendition(asset, requestedRendition) : asset;
@@ -5638,6 +5712,81 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return actorPayloadForUser(store, currentUserId(store, request.headers)!, actor);
   });
 
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/character-claims", async (request, reply) => {
+    const { campaignId } = request.params;
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "actor.read");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    const canManage = isCharacterClaimManager(store, campaignId, userId);
+    const roster = campaignCharacterClaimRoster(store.state, campaignId, canManage ? userId : undefined);
+    if (!canManage && (!store.state.members.some((member) => member.campaignId === campaignId && member.userId === userId && member.role === "player")
+      || !canCampaign(store, userId, campaignId, "actor.updateOwned") || !canCampaign(store, userId, campaignId, "scene.read") || !canCampaign(store, userId, campaignId, "token.read")
+      || roster.some(({ actor }) => actor.ownerUserId === userId))) return [];
+    return roster.filter(({ actor, eligible }) => canManage
+      ? (eligible || actor.characterClaimOffered) && canReadActorPrivateData(store, userId, campaignId, actor)
+      : eligible && characterOfferIsAuthorized(store, actor))
+      .map(({ actor }) => characterClaimOption(actor));
+  });
+
+  app.post<{ Params: { campaignId: string; actorId: string }; Body: { expectedUpdatedAt: string; offered: boolean } }>("/api/v1/campaigns/:campaignId/actors/:actorId/claim-offer", async (request, reply) => {
+    const { campaignId, actorId } = request.params;
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "actor.update");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    if (!isCharacterClaimManager(store, campaignId, userId)) return forbidden(reply, "Only a GM who manages actors and tokens can offer a character");
+    if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Character offers require an Idempotency-Key header");
+    const entry = campaignCharacterClaimRoster(store.state, campaignId, userId).find(({ actor }) => actor.id === actorId);
+    if (!entry) return notFound(reply, "Character not found");
+    const { actor, eligible } = entry;
+    if (!canReadActorPrivateData(store, userId, campaignId, actor)) return forbidden(reply, "Missing permission: actor.readPrivate");
+    const revision = requireExpectedRevision(reply, { resourceType: "actor", resourceId: actor.id, currentUpdatedAt: actor.updatedAt, expectedUpdatedAt: request.body?.expectedUpdatedAt, current: characterClaimOption(actor), label: "Character" });
+    if (revision !== true) return revision;
+    if (typeof request.body?.offered !== "boolean") return badRequest(reply, "Choose whether to offer the character");
+    if (request.body.offered && !eligible) return conflict(reply, "Choose an unassigned character or one you own, with an available token on the active scene and no pending transfer");
+    actor.characterClaimOffered = request.body.offered;
+    if (request.body.offered) actor.characterClaimOfferedByUserId = userId;
+    else delete actor.characterClaimOfferedByUserId;
+    actor.updatedAt = nextRevisionTimestamp(actor.updatedAt);
+    appendServerAuditLog(store, userId, { campaignId, action: "actor.claim.offer", targetType: "actor", targetId: actor.id, after: { offered: actor.characterClaimOffered } });
+    store.save();
+    stageRequestEventsUntilDurableSave(request, () => broadcastActorUpdated(broadcast, actor));
+    return characterClaimOption(actor);
+  });
+
+  app.post<{ Params: { campaignId: string; actorId: string }; Body: { expectedUpdatedAt: string } }>("/api/v1/campaigns/:campaignId/actors/:actorId/claim", async (request, reply) => {
+    const { campaignId, actorId } = request.params;
+    for (const permission of ["actor.read", "actor.updateOwned", "scene.read", "token.read"] as const) {
+      const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, permission);
+      if (allowed !== true) return allowed;
+    }
+    const userId = currentUserId(store, request.headers)!;
+    if (!store.state.members.some((member) => member.campaignId === campaignId && member.userId === userId && member.role === "player")) return forbidden(reply, "Only a campaign player can claim a character");
+    if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Claiming a character requires an Idempotency-Key header");
+    const roster = campaignCharacterClaimRoster(store.state, campaignId);
+    const entry = roster.find(({ actor }) => actor.id === actorId);
+    if (!entry?.eligible || !entry.landingToken || !characterOfferIsAuthorized(store, entry.actor)) return conflict(reply, "This character is no longer available to claim");
+    if (roster.some(({ actor }) => actor.ownerUserId === userId)) return conflict(reply, "You already own a character in this campaign");
+    const { actor, tokens, landingToken } = entry;
+    const revision = requireExpectedRevision(reply, { resourceType: "actor", resourceId: actor.id, currentUpdatedAt: actor.updatedAt, expectedUpdatedAt: request.body?.expectedUpdatedAt, current: characterClaimOption(actor), label: "Character" });
+    if (revision !== true) return revision;
+
+    actor.ownerUserId = userId;
+    delete actor.characterClaimOffered;
+    delete actor.characterClaimOfferedByUserId;
+    actor.updatedAt = nextRevisionTimestamp(actor.updatedAt);
+    for (const token of tokens) {
+      token.ownerUserIds = [userId];
+      token.updatedAt = nextRevisionTimestamp(token.updatedAt);
+    }
+    appendServerAuditLog(store, userId, { campaignId, action: "actor.claim", targetType: "actor", targetId: actor.id, after: { ownerUserId: userId, tokenIds: tokens.map((token) => token.id) } });
+    store.save();
+    stageRequestEventsUntilDurableSave(request, () => {
+      broadcastActorUpdated(broadcast, actor);
+      for (const token of tokens) broadcast(createEvent({ campaignId, type: "token.updated", actorUserId: userId, targetId: token.id, payload: token }));
+    });
+    return { actorId, sceneId: landingToken.sceneId, tokenId: landingToken.id };
+  });
+
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/character-transfers", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
@@ -6777,6 +6926,47 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return journalPayloadForUser(store, userId, entry);
   });
 
+  app.post<{ Params: { campaignId: string }; Body: PresentContentRequest }>("/api/v1/campaigns/:campaignId/presentations", async (request, reply) => {
+    const { campaignId } = request.params;
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    const body = request.body;
+    if (!body || !["journal", "handout"].includes(body.targetType) || !Array.isArray(body.recipientUserIds)
+      || !body.recipientUserIds.length || body.recipientUserIds.length > 100) return badRequest(reply, "Choose 1 to 100 player seats");
+    if (!canCampaign(store, userId, campaignId, body.targetType === "journal" ? "journal.update" : "handout.update")) return forbidden(reply, "Cannot present this content");
+    const recipientIds = new Set(body.recipientUserIds);
+    if ([...recipientIds].some((id) => !store.state.members.some((member) => member.userId === id && member.campaignId === campaignId && member.role === "player") || !isActiveUserId(store, id))) {
+      return badRequest(reply, "Choose current campaign players");
+    }
+    if (body.targetType === "journal" || body.pinId !== undefined || body.sceneId !== undefined) {
+      const scene = store.state.scenes.find((item) => item.campaignId === campaignId && item.id === body.sceneId);
+      if (!scene || !canReadSceneRecord(store, userId, scene) || !scenePayloadForUser(store, userId, scene).mapPins?.some((pin) =>
+        pin.id === body.pinId && pin.targetType === body.targetType && pin.targetId === body.targetId)) return notFound(reply, "Map pin is unavailable");
+    }
+    const handout = body.targetType === "handout" ? store.state.handouts.find((item) => item.campaignId === campaignId && item.id === body.targetId && canReadHandout(store, userId, item)) : undefined;
+    const entry = handout ?? (body.targetType === "journal" ? store.state.journals.find((item) => item.campaignId === campaignId && item.id === body.targetId && item.kind !== "folder" && canReadJournalEntry(store, userId, item)) : undefined);
+    if (!entry) return notFound(reply, "Content is unavailable");
+    if (entry.updatedAt !== body.expectedUpdatedAt) return reply.code(409).send({ error: "stale_write", message: "Content changed. Reopen it before showing it to players." });
+    const images = handout ? store.state.assets.filter((asset) => asset.campaignId === campaignId && handout.assetIds.includes(asset.id)
+      && isPresentationImage(asset) && canReadAssetRecord(store, userId, asset)).map(({ id: assetId, name }) => ({ assetId, name })) : [];
+    const delivered = new Set<string>();
+    const expiresAt = Date.now() + 5 * 60_000;
+    for (const client of hub.clientsMatching({ campaignId })) {
+      if (!client.userId || !recipientIds.has(client.userId) || !client.isOpen?.() || !realtimeClientAuthorizationIsCurrent(store, client)) continue;
+      const id = randomBytes(24).toString("base64url");
+      const envelope: RealtimePresentation = { channel: "presentation", campaignId, id, expiresAt, title: entry.title, body: entry.body, images };
+      try {
+        client.send(JSON.stringify(envelope));
+        client.presentation = { id, expiresAt, handoutId: handout?.id, assetIds: new Set(images.map((image) => image.assetId)) };
+        delivered.add(client.userId);
+      } catch {
+        hub.remove(client);
+      }
+    }
+    return { deliveredUserIds: [...delivered] };
+  });
+
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/handouts", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "handout.read");
     if (allowed !== true) return allowed;
@@ -6928,6 +7118,92 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return canReadDiceRoll(store, userId, roll, linkedMessage);
     });
     return pagination.requested ? paginateList(rolls, pagination) : rolls;
+  });
+
+  type TableParams = { campaignId: string; tableId: string };
+  const getTable = ({ campaignId, tableId }: TableParams) => store.state.rollableTables.find((table) => table.id === tableId && table.campaignId === campaignId);
+
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/rollable-tables", async (request, reply) => {
+    const { campaignId } = request.params;
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "campaign.read");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    const canManage = canCampaign(store, userId, campaignId, "campaign.update");
+    if (!canManage && !canCampaign(store, userId, campaignId, "dice.roll")) return forbidden(reply, "Cannot read rollable tables");
+    return visibleRollableTables(store.state.rollableTables, campaignId, canManage);
+  });
+
+  app.post<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/rollable-tables", async (request, reply) => {
+    const { campaignId } = request.params;
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Creating a rollable table requires an Idempotency-Key header");
+    const input = validatedTable(request.body);
+    if (!input) return badRequest(reply, "Provide a name, category, visibility and 1–100 text entries with integer weights from 1 to 10000");
+    const table = createTimestamped("tbl", { campaignId, ...input }) satisfies RollableTable;
+    store.state.rollableTables.push(table);
+    publishTableChange(store, campaignId, currentUserId(store, request.headers)!, broadcast);
+    return table;
+  });
+
+  app.patch<{ Params: TableParams; Body: Partial<RollableTable> & { expectedUpdatedAt?: unknown } }>("/api/v1/campaigns/:campaignId/rollable-tables/:tableId", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    const table = getTable(request.params);
+    if (!table) return notFound(reply, "Rollable table not found");
+    if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Updating a rollable table requires an Idempotency-Key header");
+    const revision = requireExpectedRevision(reply, { resourceType: "rollable_table", resourceId: table.id, currentUpdatedAt: table.updatedAt, expectedUpdatedAt: request.body?.expectedUpdatedAt, current: table, label: "Rollable table" });
+    if (revision !== true) return revision;
+    const input = validatedTable({ ...table, ...request.body });
+    if (!input) return badRequest(reply, "Invalid rollable table definition");
+    Object.assign(table, input, { updatedAt: nextRevisionTimestamp(table.updatedAt) });
+    publishTableChange(store, table.campaignId, currentUserId(store, request.headers)!, broadcast);
+    return table;
+  });
+
+  app.delete<{ Params: TableParams; Querystring: { expectedUpdatedAt?: string } }>("/api/v1/campaigns/:campaignId/rollable-tables/:tableId", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    const table = getTable(request.params);
+    if (!table) return notFound(reply, "Rollable table not found");
+    if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Deleting a rollable table requires an Idempotency-Key header");
+    const revision = requireExpectedRevision(reply, { resourceType: "rollable_table", resourceId: table.id, currentUpdatedAt: table.updatedAt, expectedUpdatedAt: request.query.expectedUpdatedAt, current: table, label: "Rollable table" });
+    if (revision !== true) return revision;
+    store.state.rollableTables = store.state.rollableTables.filter((item) => item.id !== table.id);
+    publishTableChange(store, table.campaignId, currentUserId(store, request.headers)!, broadcast);
+    return table;
+  });
+
+  app.post<{ Params: TableParams; Body: { visibility?: unknown } }>("/api/v1/campaigns/:campaignId/rollable-tables/:tableId/draw", async (request, reply) => {
+    const { campaignId } = request.params;
+    for (const permission of ["dice.roll", "chat.write"] as const) {
+      const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, permission);
+      if (allowed !== true) return allowed;
+    }
+    const userId = currentUserId(store, request.headers)!;
+    const canManage = canCampaign(store, userId, campaignId, "campaign.update");
+    const table = getTable(request.params);
+    if (!table || (!canManage && table.visibility === "gm_only")) return notFound(reply, "Rollable table not found");
+    const key = opaqueHeaderText(request.headers["idempotency-key"]);
+    if (!key) return badRequest(reply, "Drawing from a table requires an Idempotency-Key header");
+    const visibility = request.body?.visibility;
+    if (visibility !== "gm_only" && visibility !== "public") return badRequest(reply, "Choose a draw audience");
+    if (visibility === "gm_only" && !canManage) return forbidden(reply, "Only campaign managers can draw privately");
+    if (visibility === "public" && table.visibility === "gm_only") return badRequest(reply, "This table only allows GM-private draws");
+    // Chat outlives the bounded replay ledger. Retrying the same draw can recover
+    // its result even after ledger rotation or a session change.
+    const messageId = `msg_table_${hashStableJson([userId, key])}`;
+    const previous = store.state.chat.find((item) => item.id === messageId);
+    if (previous) {
+      if (previous.rollableTableId !== table.id || previous.campaignId !== campaignId || previous.visibility !== visibility || previous.userId !== userId) return conflict(reply, "Idempotency-Key was already used for a different draw");
+      return reply.header("Idempotency-Replayed", "true").send(previous);
+    }
+    const entry = drawTableEntry(table.entries);
+    const message = createTimestamped("msg", { id: messageId, campaignId, userId, type: "system" as const, visibility, recipientUserIds: [], rollableTableId: table.id, body: `${table.name}: ${entry.text}` }) satisfies ChatMessage;
+    store.state.chat.push(message);
+    store.save();
+    broadcast(createEvent({ campaignId, type: "chat.message.created", actorUserId: userId, targetId: message.id, payload: message }));
+    return message;
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/dice-macros", async (request, reply) => {
@@ -7131,6 +7407,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const canModerate = canCampaign(store, userId, message.campaignId, "chat.moderate");
     const canEditOwn = message.userId === userId && canCampaign(store, userId, message.campaignId, "chat.write");
     if (!canModerate && !canEditOwn) return forbidden(reply, "Missing permission: chat.write or chat.moderate");
+    if (message.rollableTableId) return badRequest(reply, "Table draw results cannot be edited");
     const parsedBody = parseChatMessageEditBody(request.body, reply);
     if (!parsedBody.ok) return parsedBody.reply;
     const previousBody = message.body;
@@ -7481,6 +7758,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const body = request.body ?? {};
     const sceneId = typeof body.sceneId === "string" ? body.sceneId.trim() : "";
     if (!sceneId) return badRequest(reply, "sceneId is required to start combat");
+    const encounter = body.encounterId ? store.state.encounters.find((entry) => entry.id === body.encounterId && entry.campaignId === campaign.id) : undefined;
+    if (body.encounterId && (!encounter || !canReadEncounter(store, userId, encounter))) return notFound(reply, "Encounter not found in this campaign");
     const scene = store.state.scenes.find((item) => item.id === sceneId && item.campaignId === campaign.id);
     if (!scene) return notFound(reply, "Scene not found in this campaign");
     if (store.state.combats.some((combat) => combat.campaignId === campaign.id && combat.active)) {
@@ -7552,7 +7831,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       combatants.push(applyCombatantRulesAutomation({ id: `cmbt_${token.id}`, tokenId: token.id, ...(token.actorId ? { actorId: token.actorId } : {}), ...(token.hidden ? { hidden: true } : {}), ...(surprised ? { surprised: true } : {}), name: token.name, initiative, defeated: false, readiness: "normal", conditions: token.conditions?.map((condition) => condition.name) ?? [], deathSaveSuccesses: 0, deathSaveFailures: 0, ...(resource ? { resourceKey: resource.key, resourceLabel: resource.label } : {}), resourceUsed: false }));
     }
 
-    const combat = createTimestamped("cmb", { campaignId: campaign.id, active: true, round: 1, turnIndex: 0, manualTurnOrder, combatants: orderedCombatants(combatants, manualTurnOrder) }) satisfies Combat;
+    const combat = createTimestamped("cmb", { campaignId: campaign.id, ...(encounter ? { encounterId: encounter.id } : {}), active: true, round: 1, turnIndex: 0, manualTurnOrder, combatants: orderedCombatants(combatants, manualTurnOrder) }) satisfies Combat;
     store.state.combats.push(combat);
     const campaignRevision = advanceCampaignAggregateRevision(store, combat.campaignId);
     store.state.rolls.push(...rolls);
@@ -12350,9 +12629,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     actor.updatedAt = nextRevisionTimestamp(actor.updatedAt);
     store.state.rolls.push(reroll);
     store.state.chat.push(message);
+    const changedRequest = replacePartyRollResult(store, original, reroll, nextRevisionTimestamp);
     appendServerAuditLog(store, userId, { campaignId: actor.campaignId, action: "system.actor.heroicInspiration.reroll", targetType: "actor", targetId: actor.id, before: { actorData: actorBefore, originalRollId: original.id, originalTotal: original.total }, after: { rerollRollId: reroll.id, rerollTotal: reroll.total, selectedTermIndex, selectedResultIndex, originalResult: transformed.originalResult, replacementResult, requiredResult: true } });
     store.save();
     broadcastActorUpdated(broadcast, actor);
+    if (changedRequest) broadcast(partyRollChangedEvent(changedRequest));
     broadcast(createEvent({ campaignId: reroll.campaignId, type: "dice.roll.created", actorUserId: userId, targetId: reroll.id, payload: reroll }));
     broadcast(createEvent({ campaignId: message.campaignId, type: "chat.message.created", actorUserId: userId, targetId: message.id, payload: message }));
     return { actor: actorPayloadForUser(store, userId, actor), originalRoll: original, reroll, chat: message, mustUseNewRoll: true };
@@ -13282,20 +13563,26 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
   }
 
+  async function ingestVaultAsset(target: StateStore, writer: Pick<AssetStorage, "put">, campaignId: string, sourceName: string, body: Buffer, kind: "demo" | "starter") {
+    const mimeType = "image/webp";
+    if (!body.length || body.length > maxAssetBytes) throw new Error(`Bundled asset is outside the upload size limit: ${sourceName}`);
+    const scan = await scanUploadedAsset(body, mimeType, sourceName, { externalTransport: options.assetScannerTransport });
+    if (scan.blocked) throw new Error(`Bundled asset was blocked by the upload scanner: ${sourceName}`);
+    const checksum = checksumForBuffer(body);
+    const duplicate = reusableUploadedAsset(target, campaignId, checksum, body.length, mimeType);
+    if (duplicate) return duplicate;
+    const persisted = await persistUploadedMapAsset(target, writer, { campaignId, body, mimeType, sourceName, checksum, folder: `${kind}/ember-vault`, tags: [kind], security: scan.security });
+    if (persisted.quotaExceeded) throw Object.assign(new Error(persisted.quotaExceeded.message), { statusCode: 413 });
+    if (kind === "starter" && persisted.renditionWarnings.length) throw new Error(persisted.renditionWarnings[0]!.message);
+    return persisted.asset;
+  }
+
   if (options.seedDemoPresentation && demoSeedEnabled()) {
     try {
-      await seedDemoPresentation(store, async (campaignId, sourceName, body) => {
-        const mimeType = "image/webp";
-        if (body.length === 0 || body.length > maxAssetBytes) throw new Error(`Bundled asset is outside the upload size limit: ${sourceName}`);
-        const scan = await scanUploadedAsset(body, mimeType, sourceName, { externalTransport: options.assetScannerTransport });
-        if (scan.blocked) throw new Error(`Bundled asset was blocked by the upload scanner: ${sourceName}`);
-        const checksum = checksumForBuffer(body);
-        const duplicate = reusableUploadedAsset(store, campaignId, checksum, body.length, mimeType);
-        if (duplicate) return duplicate;
-        const persisted = await persistUploadedMapAsset(store, assetStorage, { campaignId, body, mimeType, sourceName, checksum, folder: "demo/ember-vault", tags: ["demo"], security: scan.security });
-        if (persisted.quotaExceeded) throw new Error(persisted.quotaExceeded.message);
+      await seedDemoPresentation(store, async (id, name, bytes) => {
+        const asset = await ingestVaultAsset(store, assetStorage, id, name, bytes, "demo");
         store.save();
-        return persisted.asset;
+        return asset;
       });
       flushStore(store);
     } catch (error) {
@@ -20929,6 +21216,8 @@ function idempotencyRecordIsSafe(record: EngineState["idempotencyRecords"][numbe
 function idempotencyPathIsEligible(path: string): boolean {
   const pathname = path.split("?")[0] ?? path;
   if (pathname === "/api/v1/auth" || pathname.startsWith("/api/v1/auth/")) return false;
+  // A party request owns a campaign- and creator-scoped key for its full lifetime.
+  if (/^\/api\/v1\/campaigns\/[^/]+\/party-roll-requests$/.test(pathname)) return false;
   if (pathname === "/api/v1/invites/accept") return false;
   if (pathname === "/api/v1/organization/invites") return false;
   if (/^\/api\/v1\/campaigns\/[^/]+\/invites$/.test(pathname)) return false;
@@ -21126,6 +21415,20 @@ function isTokenVisibleToUser(store: StateStore, userId: string, campaignId: str
 
 function isTokenOwnedByUser(store: StateStore, userId: string, token: Token): boolean {
   return Boolean(token.ownerUserIds?.includes(userId) || (token.actorId && store.state.actors.some((actor) => actor.id === token.actorId && actor.ownerUserId === userId)));
+}
+
+function characterOfferIsAuthorized(store: StateStore, actor: Actor): boolean {
+  if (actor.characterClaimOffered !== true) return false;
+  // A starter-created offer belongs to the campaign owner.
+  const managerId = actor.characterClaimOfferedByUserId ?? store.state.campaigns.find((campaign) => campaign.id === actor.campaignId)?.ownerUserId;
+  return Boolean(managerId && isActiveUserId(store, managerId) && isCharacterClaimManager(store, actor.campaignId, managerId)
+    && canReadActorPrivateData(store, managerId, actor.campaignId, actor));
+}
+
+function isCharacterClaimManager(store: StateStore, campaignId: string, userId: string): boolean {
+  const member = store.state.members.find((entry) => entry.campaignId === campaignId && entry.userId === userId);
+  return Boolean(member && ["owner", "gm", "assistant_gm"].includes(member.role)
+    && canCampaign(store, userId, campaignId, "actor.update") && canCampaign(store, userId, campaignId, "token.update"));
 }
 
 function campaignMemberUserIds(store: StateStore, campaignId: string): Set<string> {
@@ -22010,6 +22313,11 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
   if (!userId || !canCampaign(store, userId, event.campaignId, "campaign.read")) return undefined;
   if (event.type.startsWith("campaign.member.") && isRecord(event.payload) && "source" in event.payload && !canCampaign(store, userId, event.campaignId, "campaign.update")) {
     return redactedRealtimeEvent(event, publicCampaignMember(event.payload));
+  }
+  if (event.type === "partyRoll.updated") {
+    const request = store.state.partyRollRequests.find((entry) => entry.id === event.targetId && entry.campaignId === event.campaignId);
+    const visible = request && partyRollForUser(store, userId, request);
+    return visible ? redactedRealtimeEvent(event, visible) : undefined;
   }
   if (event.type === "agent.boardCaptureRequested") {
     const payload = isRecord(event.payload) ? event.payload : {};
@@ -24031,6 +24339,7 @@ interface CampaignSnapshotResult {
   campaign: Campaign;
   members: ReturnType<typeof memberSessionInfo>[];
   presences?: CampaignPresence[];
+  partyRollRequests: PartyRollRequest[];
   campaignSessions: CampaignSession[];
   worlds: World[];
   worldRecords: WorldRecord[];
@@ -24051,6 +24360,7 @@ interface CampaignSnapshotResult {
   chat: ChatMessage[];
   rolls: DiceRoll[];
   diceMacros: DiceMacro[];
+  rollableTables: RollableTable[];
   encounters: Encounter[];
   combats: Combat[];
   proposals: Proposal[];
@@ -24159,6 +24469,7 @@ function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Camp
     user: publicUser(store.state.users.find((candidate) => candidate.id === userId)!),
     campaign,
     members: campaignMemberList(store, campaignId, canManage),
+    partyRollRequests: store.state.partyRollRequests.filter((entry) => entry.campaignId === campaignId).flatMap((entry) => partyRollForUser(store, userId, entry) ?? []),
     campaignSessions: store.state.campaignSessions.filter((session) => session.campaignId === campaignId && (canViewPrep || session.status === "live")).map((session) => (canViewPrep ? session : { ...session, agenda: "", notes: "", encounterIds: session.encounterIds.filter((encounterId) => store.state.combats.some((combat) => combat.active && combat.campaignId === campaignId && combat.encounterId === encounterId)), sceneIds: session.sceneIds.filter((sceneId) => scenes.some((scene) => scene.id === sceneId)) })),
     worlds: canWorld ? store.state.worlds.filter((world) => world.campaignId === campaignId) : [],
     worldRecords: readableWorldRecords,
@@ -24189,6 +24500,7 @@ function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Camp
     handouts: canHandout ? store.state.handouts.filter((handout) => handout.campaignId === campaignId && canReadHandout(store, userId, handout)).map((handout) => normalizeHandout(handout)) : [],
     chat: canChat ? store.state.chat.filter((message) => message.campaignId === campaignId && canReadChatMessage(store, userId, message)) : [],
     rolls: canChat ? store.state.rolls.filter((roll) => roll.campaignId === campaignId && canReadDiceRoll(store, userId, roll, linkedMessagesByRollId.get(roll.id))) : [],
+    rollableTables: canDice || canManage ? visibleRollableTables(store.state.rollableTables, campaignId, canManage) : [],
     diceMacros: canDice ? store.state.diceMacros.filter((macro) => macro.campaignId === campaignId && (macro.visibility === "public" || canManage)) : [],
     encounters: store.state.encounters.filter((encounter) => encounter.campaignId === campaignId && (canViewPrep || store.state.combats.some((combat) => combat.campaignId === campaignId && combat.active && combat.encounterId === encounter.id))),
     combats: store.state.combats.filter((combat) => combat.campaignId === campaignId).map((combat) => combatPayloadForUser(store, userId, combat)),
@@ -24749,6 +25061,10 @@ function readableAssetIdsForUser(store: StateStore, userId: string, campaignId: 
 function managedAudioAssetId(url: string): string | undefined {
   const match = /^\/api\/v1\/assets\/([^/?#]+)\/blob(?:[?#].*)?$/.exec(url);
   return match?.[1] ? decodePathPart(match[1]) : undefined;
+}
+
+function isPresentationImage(asset: MapAsset): boolean {
+  return Boolean(asset.storage) && /^image\/(png|jpeg|gif|webp|avif)$/i.test(asset.mimeType) && isAssetDeliverable(asset);
 }
 
 function canReadAssetRecord(store: StateStore, userId: string, asset: MapAsset): boolean {
@@ -25620,9 +25936,11 @@ function removeCampaignRecords(store: StateStore, campaignId: string): void {
   store.state.handouts = store.state.handouts.filter((item) => item.campaignId !== campaignId);
   store.state.chat = store.state.chat.filter((item) => item.campaignId !== campaignId);
   store.state.rolls = store.state.rolls.filter((item) => item.campaignId !== campaignId);
+  store.state.rollableTables = store.state.rollableTables.filter((table) => table.campaignId !== campaignId);
   store.state.diceMacros = store.state.diceMacros.filter((item) => item.campaignId !== campaignId);
   store.state.audioTracks = store.state.audioTracks.filter((item) => item.campaignId !== campaignId);
   store.state.encounters = store.state.encounters.filter((item) => item.campaignId !== campaignId);
+  store.state.partyRollRequests = store.state.partyRollRequests.filter((entry) => entry.campaignId !== campaignId);
   store.state.campaignSessions = store.state.campaignSessions.filter((item) => item.campaignId !== campaignId);
   store.state.combats = store.state.combats.filter((item) => item.campaignId !== campaignId);
   store.state.proposals = store.state.proposals.filter((item) => item.campaignId !== campaignId);
@@ -27696,7 +28014,7 @@ function normalizeAssetMimeType(value: string | string[] | undefined): string {
   return mimeType && mimeType.length > 0 ? mimeType : "application/octet-stream";
 }
 
-async function persistUploadedMapAsset(store: StateStore, storage: AssetStorage, input: {
+async function persistUploadedMapAsset(store: StateStore, storage: Pick<AssetStorage, "put">, input: {
   campaignId: string;
   body: Buffer;
   mimeType: string;
@@ -27724,7 +28042,7 @@ function reusableUploadedAsset(store: StateStore, campaignId: string, checksum: 
   return store.state.assets.find((asset) => asset.campaignId === campaignId && asset.checksum === checksum && asset.sizeBytes === sizeBytes && asset.mimeType === mimeType && asset.lifecycle?.status !== "archived" && asset.lifecycle?.status !== "deleted" && asset.security?.status === "clean" && Boolean(asset.storage) && isAssetDeliverable(asset));
 }
 
-async function storeAssetRenditions(storage: AssetStorage, asset: MapAsset, renditions: BuiltAssetRendition[]): Promise<{ renditions: NonNullable<MapAsset["renditions"]>; warnings: AssetRenditionBuildWarning[] }> {
+async function storeAssetRenditions(storage: Pick<AssetStorage, "put">, asset: MapAsset, renditions: BuiltAssetRendition[]): Promise<{ renditions: NonNullable<MapAsset["renditions"]>; warnings: AssetRenditionBuildWarning[] }> {
   const stored: NonNullable<MapAsset["renditions"]> = [];
   const warnings: AssetRenditionBuildWarning[] = [];
   for (const rendition of renditions) {
@@ -28849,7 +29167,7 @@ function staleWriteConflict(reply: FastifyReply, input: { resourceType: Revision
   return reply.code(409).send({ error: "conflict", code: "stale_write", message: `${input.resourceType === "actor" ? "Actor" : input.resourceType === "campaign" ? "Campaign" : input.resourceType === "combat" ? "Combat" : input.resourceType === "item" ? "Item" : input.resourceType === "scene" ? "Scene" : input.resourceType === "token" ? "Token" : input.resourceType === "user" ? "Profile" : "Journal entry"} changed after this action was prepared. Review the latest state and retry.`, resourceType: input.resourceType, resourceId: input.resourceId, expectedUpdatedAt: input.expectedUpdatedAt, currentUpdatedAt: input.currentUpdatedAt, current: input.current });
 }
 
-type RevisionResourceType = "actor" | "calculation_override" | "campaign" | "campaign_invite" | "campaign_member" | "campaign_session" | "character_transfer" | "combat" | "content_import" | "item" | "journal" | "organization" | "organization_member" | "plugin_storage" | "scene" | "token" | "user" | "world_record" | "world_relation";
+type RevisionResourceType = "rollable_table" | "actor" | "calculation_override" | "campaign" | "campaign_invite" | "campaign_member" | "campaign_session" | "character_transfer" | "combat" | "content_import" | "item" | "journal" | "organization" | "organization_member" | "plugin_storage" | "scene" | "token" | "user" | "world_record" | "world_relation";
 
 function nextRevisionTimestamp(current: string): string {
   const now = Date.now();

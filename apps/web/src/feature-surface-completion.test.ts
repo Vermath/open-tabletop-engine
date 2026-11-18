@@ -14,6 +14,7 @@ const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
 const actorPanelSource = readFileSync(resolve(__dirname, "actor-panel.tsx"), "utf8");
 const advancementSource = readFileSync(resolve(__dirname, "advancement-flow.tsx"), "utf8");
 const restSource = readFileSync(resolve(__dirname, "hit-dice-rest-card.tsx"), "utf8");
+const archiveWizardSource = readFileSync(resolve(__dirname, "archive-wizards.tsx"), "utf8");
 const chatSource = readFileSync(resolve(__dirname, "chat-rail.tsx"), "utf8");
 const stylesSource = readFileSync(resolve(__dirname, "styles.css"), "utf8");
 
@@ -193,11 +194,11 @@ describe("player recovery and chat completion", () => {
 
 describe("portable scoped exports", () => {
   it("offers world and selected-collection exports with required scope parameters", () => {
-    expect(appSource).toContain('<option value="world">One world</option>');
-    expect(appSource).toContain('<option value="selected_collections">Selected record collections</option>');
+    expect(archiveWizardSource).toContain('<option value="world">One world</option>');
+    expect(archiveWizardSource).toContain('<option value="selected_collections">Selected record collections</option>');
     expect(appSource).toContain('params.set("scopeId", archiveExportWorldId)');
     expect(appSource).toContain('params.set("collections", archiveExportCollections.join(","))');
-    expect(appSource).toContain('aria-label="Archive export collection selection"');
+    expect(archiveWizardSource).toContain('aria-label="Archive export collection selection"');
     expect(stylesSource).toContain(".archive-export-collections");
   });
 

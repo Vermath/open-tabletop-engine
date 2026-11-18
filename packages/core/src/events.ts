@@ -19,6 +19,17 @@ export interface RealtimePresenceEnvelope {
   presences?: CampaignPresence[];
 }
 
+/** A live, recipient-only message, never recorded in the campaign event log. */
+export interface RealtimePresentation {
+  channel: "presentation";
+  campaignId: ID;
+  id: ID;
+  expiresAt: number;
+  title: string;
+  body: string;
+  images: { assetId: ID; name: string }[];
+}
+
 export function createEvent<TPayload>(input: Omit<EngineEvent<TPayload>, "id" | "timestamp">): EngineEvent<TPayload> {
   return {
     ...input,

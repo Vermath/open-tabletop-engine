@@ -1,3 +1,4 @@
+import { campaignCharacterClaimRoster } from "./character-claims.js";
 import { createHash } from "node:crypto";
 import { createId, createTimestamped, emptyState, normalizeEngineState, nowIso, type Actor, type Campaign, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type Combat, type ContentImportAppliedRecord, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type Encounter, type EngineState, type Handout, type Item, type JournalEntry, type MapAsset, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type World } from "@open-tabletop/core";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
@@ -89,6 +90,7 @@ export const exportSelectableArchiveCollections = [
   "chat",
   "rolls",
   "diceMacros",
+  "rollableTables",
   "audioTracks",
   "encounters",
   "campaignSessions",
@@ -288,6 +290,8 @@ export function closeArchiveRecordDependencies(data: EngineState, source: Engine
       ...data.combats.flatMap((record) => record.actions?.map((action) => action.rollId) ?? [])
     ].filter((id): id is string => Boolean(id));
     changed = add("rolls", rollIds) || changed;
+
+    changed = add("rollableTables", data.chat.flatMap((record) => record.rollableTableId ? [record.rollableTableId] : [])) || changed;
 
     const messageIds = data.chat.map((record) => record.replyToMessageId).filter((id): id is string => Boolean(id));
     changed = add("chat", messageIds) || changed;
@@ -1029,6 +1033,7 @@ export const operatorSelectableArchiveCollections = [
   "chat",
   "rolls",
   "diceMacros",
+  "rollableTables",
   "audioTracks",
   "encounters",
   "campaignSessions",
@@ -1061,7 +1066,7 @@ export function archiveImportDependencyWarnings(scope: "all" | "assets_only" | "
     items: ["worlds", "actors"],
     journals: ["worlds", "assets"],
     handouts: ["worlds", "assets"],
-    chat: ["rolls"],
+    chat: archive.data.chat.some((message) => message.rollableTableId) ? ["rolls", "rollableTables"] : ["rolls"],
     encounters: ["worlds", "actors", "tokens"],
     campaignSessions: ["scenes", "encounters", "journals"],
     combats: ["actors", "tokens", "scenes"],
@@ -1106,6 +1111,7 @@ export const regeneratableArchiveCollections = [
   "chat",
   "rolls",
   "diceMacros",
+  "rollableTables",
   "audioTracks",
   "encounters",
   "campaignSessions",
@@ -1139,6 +1145,7 @@ export const archiveIdPrefixes: Record<(typeof regeneratableArchiveCollections)[
   chat: "msg",
   rolls: "roll",
   diceMacros: "mac",
+  rollableTables: "tbl",
   audioTracks: "audio",
   encounters: "enc",
   campaignSessions: "cses",
@@ -1155,8 +1162,16 @@ export const archiveIdPrefixes: Record<(typeof regeneratableArchiveCollections)[
   fogPresets: "fogp"
 };
 
-export function archiveWithRegeneratedIds(archive: CampaignArchive, options: { userId: string; organizationId: string }): CampaignArchive {
+export function archiveWithRegeneratedIds(archive: CampaignArchive, options: { userId: string; organizationId: string; authorizedSourceOffers?: ReadonlySet<string> }): CampaignArchive {
   const data = clonePlain(archive.data);
+  if (options.authorizedSourceOffers) {
+    for (const actor of data.actors) {
+      if (!options.authorizedSourceOffers.has(actor.id)) {
+        delete actor.characterClaimOffered;
+        delete actor.characterClaimOfferedByUserId;
+      }
+    }
+  }
   const idMap = new Map<string, string>();
   for (const collection of regeneratableArchiveCollections) {
     for (const record of data[collection] as Array<{ id?: string }>) {
@@ -1167,6 +1182,9 @@ export function archiveWithRegeneratedIds(archive: CampaignArchive, options: { u
   const remappedData = remapArchiveReferences(data, idMap) as EngineState;
   // Package identities live outside the campaign-record ID namespace. Restore
   // only known domain fields; retain historical remapping inside arbitrary data.
+  for (const [index, table] of data.rollableTables.entries()) {
+    Object.assign(remappedData.rollableTables[index]!, { name: table.name, entries: table.entries, category: table.category, visibility: table.visibility });
+  }
   for (const [index, scene] of data.scenes.entries()) {
     if (scene.mapPins) remappedData.scenes[index]!.mapPins = scene.mapPins.map((pin) => ({ ...pin, targetId: idMap.get(pin.targetId) ?? pin.targetId }));
   }
@@ -1192,6 +1210,19 @@ export function archiveWithRegeneratedIds(archive: CampaignArchive, options: { u
         role: "owner" as const
       }) satisfies CampaignMember
     );
+  }
+  // Copy an eligible offer with its character and token owners. The source
+  // offering GM has no membership in the new campaign.
+  for (const campaignId of copiedCampaignIds) {
+    for (const { actor, eligible, tokens } of campaignCharacterClaimRoster(remappedData, campaignId)) {
+      if (actor.characterClaimOffered === true && eligible) {
+        actor.characterClaimOfferedByUserId = options.userId;
+        for (const token of tokens) if (token.ownerUserIds?.length) token.ownerUserIds = [options.userId];
+      } else {
+        delete actor.characterClaimOffered;
+        delete actor.characterClaimOfferedByUserId;
+      }
+    }
   }
   for (const actor of remappedData.actors) {
     if (copiedCampaignIds.has(actor.campaignId)) actor.ownerUserId = options.userId;
@@ -1308,6 +1339,34 @@ export function secureArchiveIdentityForImport(
 
   for (const actor of data.actors) {
     if (actor.ownerUserId && !knownUserIds.has(actor.ownerUserId)) actor.ownerUserId = options.userId;
+  }
+  // A restored archive cannot issue a new offer on someone else's existing
+  // table. Preserve local offers only while the actor has the same owner.
+  const existingActors = new Map(state.actors.map((actor) => [actor.id, actor]));
+  for (const actor of data.actors) {
+    if (newCampaignIds.has(actor.campaignId)) {
+      if (actor.characterClaimOffered === true && (!actor.ownerUserId || actor.ownerUserId === options.userId)) {
+        actor.characterClaimOfferedByUserId = options.userId;
+        continue;
+      }
+    } else {
+      const existing = existingActors.get(actor.id);
+      if (existing?.campaignId === actor.campaignId && existing.characterClaimOffered === true && existing.ownerUserId === actor.ownerUserId) {
+        actor.characterClaimOffered = true;
+        actor.characterClaimOfferedByUserId = existing.characterClaimOfferedByUserId;
+        continue;
+      }
+    }
+    delete actor.characterClaimOffered;
+    delete actor.characterClaimOfferedByUserId;
+  }
+  for (const campaignId of newCampaignIds) {
+    for (const { actor, eligible } of campaignCharacterClaimRoster(data, campaignId)) {
+      if (!eligible) {
+        delete actor.characterClaimOffered;
+        delete actor.characterClaimOfferedByUserId;
+      }
+    }
   }
   for (const journal of data.journals) {
     journal.visibleToUserIds = journal.visibleToUserIds.filter((userId) => knownUserIds.has(userId));
@@ -1447,6 +1506,7 @@ export function mergeArchive(state: EngineState, archive: CampaignArchive): Reco
     handouts: upsertRecords(state.handouts, archive.data.handouts),
     chat: upsertRecords(state.chat, archive.data.chat),
     rolls: upsertRecords(state.rolls, archive.data.rolls),
+    rollableTables: upsertRecords(state.rollableTables, archive.data.rollableTables ?? []),
     diceMacros: upsertRecords(state.diceMacros, archive.data.diceMacros ?? []),
     audioTracks: upsertRecords(state.audioTracks, archive.data.audioTracks ?? []),
     encounters: upsertRecords(state.encounters, archive.data.encounters),
@@ -1468,6 +1528,7 @@ export function mergeArchive(state: EngineState, archive: CampaignArchive): Reco
     contentImports: upsertRecords(state.contentImports, archive.data.contentImports ?? []),
     campaignArchiveImportOperations: 0,
     fogPresets: upsertRecords(state.fogPresets, archive.data.fogPresets ?? []),
+    partyRollRequests: 0,
     campaignWebhooks: 0,
     campaignWebhookDeliveries: 0,
     idempotencyRecords: 0,
@@ -1683,6 +1744,7 @@ export function archiveReferenceProtection(
     const error =
       validateReference(message.campaignId, "scenes", message.sceneId, `Chat message ${message.id}`) ??
       validateReference(message.campaignId, "rolls", message.rollId, `Chat message ${message.id}`) ??
+      validateReference(message.campaignId, "rollableTables", message.rollableTableId, `Chat message ${message.id}`, false) ??
       validateReference(message.campaignId, "chat", message.replyToMessageId, `Chat message ${message.id}`, false);
     if (error) return { ok: false, error };
   }

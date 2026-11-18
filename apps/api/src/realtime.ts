@@ -7,6 +7,8 @@ export interface RealtimeClient {
   connectedAt?: string;
   lastSeenAt?: string;
   activeSceneId?: string;
+  isOpen?(): boolean;
+  presentation?: { id: string; expiresAt: number; handoutId?: string; assetIds: Set<string> };
   send(data: string): void;
   close?(): void;
 }

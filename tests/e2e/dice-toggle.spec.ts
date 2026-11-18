@@ -84,6 +84,8 @@ test("3D dice preloads the physics stage when enabled", async ({ page }) => {
 });
 
 test("the layered dice cast reveals one result without progress or fallback toasts", async ({ page }) => {
+  // Start behind the API clock so we can pause at real time just before the new roll.
+  await page.clock.install({ time: Date.now() - 60_000 });
   await page.addInitScript(() => {
     localStorage.setItem("otte:dice3d", "on");
     const getContext = HTMLCanvasElement.prototype.getContext;
@@ -99,6 +101,7 @@ test("the layered dice cast reveals one result without progress or fallback toas
   await openInspectorPanel(page, "Chat");
   await expect(await ensure3dDiceEnabled(page)).toHaveAttribute("aria-pressed", "true");
 
+  await page.clock.pauseAt(new Date());
   const initialRollCards = await page.locator(".chat-roll-card").count();
   await page.getByRole("textbox", { name: "Dice formula" }).fill("1d4");
   await page.getByRole("button", { name: "Roll dice" }).click();
@@ -111,8 +114,16 @@ test("the layered dice cast reveals one result without progress or fallback toas
   const diceToasts = page.locator(".toast").filter({ hasText: /Rolling dice|3D dice engine unavailable|Rolled/ });
   await expect(diceToasts).toHaveCount(0);
 
-  await expect(rollCard.locator(".chat-roll-total")).toHaveText(/[1-4]/, { timeout: 4_000 });
-  await expect(page.locator(".dice-cast-label")).toHaveCount(1);
+  await expect(page.locator(".dice-cast-die")).toHaveCount(1);
+  const callout = page.locator(".dice-cast-label");
+  const settleMs = await callout.evaluate((element) => parseFloat(getComputedStyle(element).getPropertyValue("--cast-label-delay")));
+  expect(settleMs).toBeGreaterThan(0);
+  expect(settleMs).toBeLessThanOrEqual(4_000);
+  await page.clock.runFor(settleMs - 1);
+  await expect(rollCard.locator(".chat-roll-total")).toHaveText("...");
+  await page.clock.runFor(1);
+  await expect(rollCard.locator(".chat-roll-total")).toHaveText(/^[1-4]$/);
+  await expect(callout).toHaveCount(1);
   await expect(diceToasts).toHaveCount(0);
   await expect(rollCard.locator(".chat-roll-dice")).toHaveCount(0);
   await rollCard.locator(".chat-roll-summary").click();
