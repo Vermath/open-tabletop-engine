@@ -23,6 +23,7 @@ import { preferredMapRenderer, useBoardCanvasLayers } from "./board-canvas-layer
 import { BoardDarknessLayer, BoardDifficultTerrainLayer, BoardLightingLayer, BoardStructureHandles, BoardVisionMaskLayer, BoardWallLayer, type BoardStructureHandlers } from "./board-layers.js";
 import { useStableHandlers, useStructurallyStable } from "./board-render-stability.js";
 import { BoardToken, type BoardTokenHandlers } from "./board-token.js";
+import { safeLightCssColor } from "./light-color.js";
 
 export { lightPolygonClassName, polygonPoints, visionPolygonClassName } from "./board-layers.js";
 
@@ -1829,21 +1830,24 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
           }}
         />
       )}
-      {props.scene.lights.map((light) => (
-        <div
-          className={`light-source ${light.kind ?? "light"}`}
-          key={light.id}
-          style={{
-            left: `${(light.x / props.scene.width) * 100}%`,
-            top: `${(light.y / props.scene.height) * 100}%`,
-            width: `${(light.radius / props.scene.width) * 200}%`,
-            background: `radial-gradient(circle, ${light.color} 0%, ${light.color} 22%, transparent 72%)`,
-            opacity: light.intensity ?? 0.18,
-            pointerEvents: "none"
-          }}
-          aria-hidden="true"
-        />
-      ))}
+      {props.scene.lights.map((light) => {
+        const color = safeLightCssColor(light.color, light.kind);
+        return (
+          <div
+            className={`light-source ${light.kind ?? "light"}`}
+            key={light.id}
+            style={{
+              left: `${(light.x / props.scene.width) * 100}%`,
+              top: `${(light.y / props.scene.height) * 100}%`,
+              width: `${(light.radius / props.scene.width) * 200}%`,
+              background: `radial-gradient(circle, ${color} 0%, ${color} 22%, transparent 72%)`,
+              opacity: light.intensity ?? 0.18,
+              pointerEvents: "none"
+            }}
+            aria-hidden="true"
+          />
+        );
+      })}
       <BoardLightingLayer width={props.scene.width} height={props.scene.height} polygons={lightPolygons} />
       <BoardDarknessLayer
         width={props.scene.width}
