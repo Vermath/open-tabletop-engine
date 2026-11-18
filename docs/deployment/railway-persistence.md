@@ -18,7 +18,7 @@ Keep the API service at one replica while SQLite is the active store. Scale the 
 
 ## API Runtime Variables
 
-Set `OTTE_WEB_ORIGIN` on the API service to the public HTTPS origin players use for the web app. The Railway start command uses this origin for signed map and token images unless you explicitly set `OTTE_PUBLIC_URL`. If you configure start commands in the Railway dashboard, set `OTTE_PUBLIC_URL` there as well. The web service can still reach the API over Railway's private network using `OTTE_API_URL`.
+Set `OTTE_WEB_ORIGIN` on the API service to the public HTTPS origin players use for the web app. When the web proxy reaches the API on a private Railway address, the API uses this public origin for signed map and token images. Set `OTTE_PUBLIC_URL` for a separate public API origin or `OTTE_ASSET_CDN_BASE_URL` for a dedicated asset CDN.
 
 `railway.api.json` sets the production API start command with these persistence defaults:
 
