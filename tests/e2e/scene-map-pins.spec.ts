@@ -9,9 +9,13 @@ const origin = `http://127.0.0.1:${process.env.OTTE_E2E_WEB_PORT ?? 5174}`;
 
 async function seat(page: Page, player = false) {
   await page.setViewportSize({ width: 1600, height: 1000 });
+  const login = await page.request.post(api + "/api/v1/auth/login", { data: { email: player ? "player@example.test" : "gm@example.test" } });
+  expect(login.ok()).toBe(true);
+  await page.addInitScript((id: string) => {
+    localStorage.setItem("otte:userId", id);
+    localStorage.setItem("otte:sessionTransport", "cookie");
+  }, (await login.json()).user.id);
   await page.goto("/");
-  await page.getByRole("button", { name: "Demo GM", exact: true }).click();
-  if (player) await page.getByRole("combobox", { name: "Session user", exact: true }).selectOption("usr_demo_player");
   await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("The Ember Vault");
   await page.getByRole("button", { name: "Live Table", exact: true }).click();
   const show = page.getByRole("button", { name: "Show scene", exact: true });
@@ -107,9 +111,12 @@ test("presents a private illustrated handout and journal pin while the player st
   try {
     const player = await context.newPage();
     await seat(player, true);
-    const chat = await selectInspectorPanel(player, "Chat");
     const playerBoard = player.getByRole("group", { name: `${activeTestScene.name} interactive battle map` });
     await expect(playerBoard).toBeVisible();
+    const selectedTab = player.getByRole("tablist", { name: "Inspector panels" }).getByRole("tab", { selected: true });
+    await expect(selectedTab).toBeVisible();
+    const beforeTabId = await selectedTab.getAttribute("id");
+    expect(beforeTabId).toBeTruthy();
     const beforeUrl = player.url();
     await selectInspectorPanel(page, "Handouts");
     await page.getByRole("button", { name: new RegExp(handout.title) }).click();
@@ -124,7 +131,7 @@ test("presents a private illustrated handout and journal pin while the player st
     const imageUrl = (await image.getAttribute("src"))!;
     await modal.getByRole("button", { name: "Dismiss" }).click();
     await expect(modal).toHaveCount(0);
-    await expect(chat).toHaveAttribute("aria-selected", "true");
+    await expect(selectedTab).toHaveAttribute("id", beforeTabId!);
     await expect(playerBoard).toBeVisible();
     expect(player.url()).toBe(beforeUrl);
     await expect.poll(async () => (await player.request.get(imageUrl, { headers: headers() })).status()).toBe(404);
@@ -133,22 +140,36 @@ test("presents a private illustrated handout and journal pin while the player st
     await player.addInitScript(() => {
       if (!sessionStorage.getItem("hold-test-snapshot")) return;
       sessionStorage.removeItem("hold-test-snapshot");
-      // Replay the actual revoked packet and its revocation after a later grant arrives.
+      // Capture the real packets to exercise duplicate and out-of-order delivery on this connection.
       window.WebSocket = class extends WebSocket {
         constructor(url: string | URL, protocols?: string | string[]) {
           super(url, protocols);
           if (new URL(url).pathname !== "/api/v1/realtime") return;
-          let last: { id: string; data: string } | undefined;
+          const grants: string[] = [];
+          let revocation: string | undefined;
           this.addEventListener("message", (event) => {
+            if (!event.isTrusted) return;
             const frame = JSON.parse(event.data);
-            if (frame.channel === "presentation") last = { id: frame.id, data: event.data };
-            if (frame.channel !== "presentation.revoked" || !last || last.id !== frame.id) return;
-            const revoked = last.data;
-            Object.assign(window, { replayRevokedPresentation: () => {
-              this.dispatchEvent(new MessageEvent("message", { data: revoked }));
-              this.dispatchEvent(new MessageEvent("message", { data: event.data }));
-            } });
+            if (frame.channel === "presentation") grants.push(event.data);
+            if (frame.channel === "presentation.revoked") revocation = event.data;
           });
+          const receive = (data: string) => this.dispatchEvent(new MessageEvent("message", { data }));
+          Object.assign(window, { replayPresentation: (kind: "revoked" | "superseded" | "dismissed") => {
+            if (kind === "revoked") {
+              if (!revocation) throw new Error("Missing real revoke frame");
+              const revoked = JSON.parse(revocation);
+              const grant = grants.map((data) => JSON.parse(data)).find((packet) => packet.id === revoked.id);
+              if (!grant) throw new Error("Missing revoked presentation");
+              receive(revocation);
+              const id = crypto.randomUUID();
+              receive(JSON.stringify({ ...revoked, id }));
+              receive(JSON.stringify({ ...grant, id }));
+            } else {
+              const packet = grants.at(kind === "superseded" ? -2 : -1);
+              if (!packet) throw new Error("Missing presentation frame");
+              receive(packet);
+            }
+          } });
         }
       };
       const held = new Promise<void>((resolve) => window.addEventListener("release-test-snapshot", () => resolve(), { once: true }));
@@ -232,20 +253,33 @@ test("presents a private illustrated handout and journal pin while the player st
       await page.evaluate(() => window.dispatchEvent(new Event("release-promotion-snapshot")));
     }
     await pinDialog.getByRole("button", { name: "Show selected players" }).click();
+    async function replay(kind: "revoked" | "superseded" | "dismissed") {
+      await player.evaluate(async (replayKind) => {
+        const handler = (window as Window & { replayPresentation?: (kind: typeof replayKind) => void }).replayPresentation;
+        if (!handler) throw new Error("Missing player socket");
+        handler(replayKind);
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      }, kind);
+    }
     try {
       await expect.poll(() => receivedJournal).toBe(true);
       await expect(modal).toContainText("both braziers");
-      await player.evaluate(async () => {
-        const replay = (window as Window & { replayRevokedPresentation?: () => void }).replayRevokedPresentation;
-        if (!replay) throw new Error("The player socket did not receive its presentation revocation");
-        replay();
-        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-      });
+      await replay("revoked");
       await expect(modal).toContainText("both braziers");
     } finally {
       await player.evaluate(() => window.dispatchEvent(new Event("release-promotion-snapshot")));
     }
     await expect(player.getByRole("button", { name: "Open map pin GM key" })).toHaveCount(0);
+    const replacement = await page.request.post(campaign + "/presentations", { headers: headers(), data: {
+      targetType: "handout", targetId: handout.id, expectedUpdatedAt: handout.updatedAt, recipientUserIds: ["usr_demo_player"],
+    } });
+    expect(await replacement.json()).toEqual({ deliveredUserIds: ["usr_demo_player"] });
+    await expect(modal.getByRole("heading", { name: handout.title })).toBeVisible();
+    await replay("superseded");
+    await expect(modal.getByRole("heading", { name: handout.title })).toBeVisible();
+    await modal.getByRole("button", { name: "Dismiss" }).click();
+    await replay("dismissed");
+    await expect(modal).toHaveCount(0);
     await player.reload();
     await expect(playerBoard).toBeVisible();
     await expect(modal).toHaveCount(0);

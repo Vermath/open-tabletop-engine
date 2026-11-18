@@ -80,9 +80,19 @@ export function isPresentation(value: unknown): value is RealtimePresentation {
 export function usePlayerPresentation(snapshot: Pick<Snapshot, "members" | "membershipScope">, campaignId: string, userId: string, sessionEpoch: number, connectionKey: string | null) {
   const [presentation, setPresentation] = useState<{ connectionKey: string; content: RealtimePresentation }>();
   const sendDismiss = useRef<((id: string) => void) | undefined>(undefined);
-  const revokedIds = useRef(new Map<string, number>());
+  const handledIds = useRef(new Map<string, number>());
   const content = presentation?.connectionKey === connectionKey ? presentation?.content : undefined;
   const access = presentationSeatAccess(snapshot.membershipScope, campaignId, userId, sessionEpoch, snapshot.members, content?.recipientSeat);
+
+  function remember(id: string, expiresAt: number): boolean {
+    const now = Date.now();
+    for (const [previousId, until] of handledIds.current) {
+      if (until <= now) handledIds.current.delete(previousId);
+    }
+    if (handledIds.current.has(id)) return false;
+    handledIds.current.set(id, expiresAt);
+    return true;
+  }
 
   function dismiss(id: string) {
     sendDismiss.current?.(id);
@@ -98,19 +108,17 @@ export function usePlayerPresentation(snapshot: Pick<Snapshot, "members" | "memb
 
   return {
     connect(send: (id: string) => void) { sendDismiss.current = send; },
-    disconnect() { sendDismiss.current = undefined; revokedIds.current.clear(); setPresentation(undefined); },
+    disconnect() { sendDismiss.current = undefined; handledIds.current.clear(); setPresentation(undefined); },
     receive(message: unknown): boolean {
       if (message && typeof message === "object" && "channel" in message && message.channel === "presentation.revoked") {
         if ("campaignId" in message && message.campaignId === campaignId && "id" in message && typeof message.id === "string") {
-          const now = Date.now();
-          for (const [id, until] of revokedIds.current) if (until <= now) revokedIds.current.delete(id);
-          revokedIds.current.set(message.id, now + PRESENTATION_TTL_MS);
+          remember(message.id, Date.now() + PRESENTATION_TTL_MS);
           setPresentation((current) => current?.content.id === message.id ? undefined : current);
         }
         return true;
       }
       if (!isPresentation(message)) return false;
-      if (connectionKey && message.campaignId === campaignId && message.expiresAt > Date.now() && !revokedIds.current.has(message.id)) setPresentation({ connectionKey, content: message });
+      if (connectionKey && message.campaignId === campaignId && message.expiresAt > Date.now() && remember(message.id, message.expiresAt)) setPresentation({ connectionKey, content: message });
       return true;
     },
     dialog: access === "allowed" && content && content.expiresAt > Date.now()
