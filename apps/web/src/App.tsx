@@ -41,8 +41,7 @@ import { boardCaptureRequestDecision, createRealtimeHandlers, workspaceSelection
 import { createVisionReconciliation } from "./vision-reconciliation.js";
 import { loadRealtimeWorkspaceChanges } from "./realtime-workspace-load.js";
 import { changesRealtimeRecord, removeRealtimeRecord, sameSnapshotValue, upsertBoundedRealtimeRecord, upsertNewestPrependedRealtimeRecord, upsertNewestRealtimeRecord, upsertNewestRealtimeRecords, upsertRealtimeRecord } from "./realtime-snapshot-delta.js";
-import type { RealtimePresentation } from "@open-tabletop/core";
-import { isPresentation, presentationSeatAccess, PresentedContent } from "./presentation.js";
+import { usePlayerPresentation } from "./presentation.js";
 import { applyPresenceEnvelope, parseRealtimePayload, realtimeSequenceDecision } from "./realtime-sequence.js";
 import { settleWorkspaceLoreLoad } from "./workspace-lore-load.js";
 import { settleWorkspaceBoundAction, type WorkspaceBoundRequest, type WorkspaceRequestIdentity } from "./workspace-bound-action.js";
@@ -655,8 +654,6 @@ export function App() {
   const realtimeBoardCaptureHandlerRef = useRef<(data: unknown) => boolean>(() => false);
   const realtimeApplyRef = useRef<(data: unknown) => RealtimeApplyResult>(() => "ignored");
   const realtimeSequenceRef = useRef(snapshot.eventSequence);
-  const [presentation, setPresentation] = useState<{ connectionKey: string; content: RealtimePresentation }>();
-  const dismissPresentation = useRef<((id: string) => void) | undefined>(undefined);
   const [visionStore] = useState(createVisionReconciliation);
   const visionRequestRef = useRef(0);
   const hpAdjustRef = useRef<Map<string, { current: number; max: number; timer: number; actor: Actor; request: WorkspaceBoundRequest }>>(new Map());
@@ -677,18 +674,7 @@ export function App() {
   const campaignSetupDraftScope = useMemo(() => activeOrganizationId && currentUserId ? { organizationId: activeOrganizationId, userId: currentUserId, campaignId: campaignId || "new" } satisfies CampaignSetupDraftScope : undefined, [activeOrganizationId, campaignId, currentUserId]);
   const campaignSetupDraftKey = campaignSetupDraftScope ? campaignSetupDraftStorageKey(campaignSetupDraftScope) : "";
   const currentMember = snapshot.members.find((member) => member.user.id === currentUserId);
-  const presentationAccess = presentationSeatAccess(snapshot.membershipScope, campaignId, currentUserId, sessionTransportEpoch, snapshot.members);
-  useEffect(() => {
-    if (!presentation || presentation.connectionKey !== realtimeConnectionKey) return;
-    const dismiss = () => {
-      dismissPresentation.current?.(presentation.content.id);
-      setPresentation((current) => current?.content.id === presentation.content.id ? undefined : current);
-    };
-    const remaining = presentation.content.expiresAt - Date.now();
-    if (presentationAccess === "denied" || remaining <= 0) { dismiss(); return; }
-    const timer = window.setTimeout(dismiss, remaining);
-    return () => window.clearTimeout(timer);
-  }, [presentation, presentationAccess, realtimeConnectionKey]);
+  const playerPresentation = usePlayerPresentation(snapshot, campaignId, currentUserId, sessionTransportEpoch, realtimeConnectionKey);
   const hasPermission = (permission: PermissionName) => currentMember?.permissions.includes(permission) ?? false;
   const orderedScenes = [...snapshot.scenes].sort(compareScenesForDisplay);
   const accessibleScenes = hasPermission("scene.update") ? orderedScenes : orderedScenes.filter((scene) => scene.active);
@@ -2100,7 +2086,7 @@ export function App() {
       activeSceneId: () => realtimeSelectionRef.current.sceneId || undefined,
       onOpen: ({ reconnected, dismissPresentation: dismiss }) => {
         if (cancelled) return;
-        dismissPresentation.current = dismiss;
+        playerPresentation.connect(dismiss);
         clearResyncRetry();
         const generation = ++resyncGeneration;
         if (!reconnected) {
@@ -2118,16 +2104,7 @@ export function App() {
       onMessage: (data) => {
         if (cancelled) return;
         const message = parseRealtimePayload(data);
-        if (message && typeof message === "object" && "channel" in message && message.channel === "presentation.revoked") {
-          if ("campaignId" in message && message.campaignId === campaignId && "id" in message) {
-            setPresentation((current) => current?.content.id === message.id ? undefined : current);
-          }
-          return;
-        }
-        if (isPresentation(message)) {
-          if (message.campaignId === campaignId && message.expiresAt > Date.now()) setPresentation({ connectionKey: realtimeConnectionKey, content: message });
-          return;
-        }
+        if (playerPresentation.receive(message)) return;
         if (applyPresenceMessage(message)) return;
         if (resyncing) queuedMessages.push(message);
         else dispatchDomainMessage(message, true);
@@ -2135,7 +2112,7 @@ export function App() {
       onUnavailable: () => {
         if (cancelled) return;
         setRealtimeUiState("reconnecting");
-        setPresentation(undefined);
+        playerPresentation.disconnect();
         resyncGeneration += 1;
         resyncing = false;
         queuedMessages.length = 0;
@@ -2148,8 +2125,7 @@ export function App() {
       resyncGeneration += 1;
       clearResyncRetry();
       queuedMessages.length = 0;
-      setPresentation(undefined);
-      dismissPresentation.current = undefined;
+      playerPresentation.disconnect();
       realtimeHandlers.dispose();
       stopRealtime();
     };
@@ -9090,10 +9066,7 @@ export function App() {
     <>
     {consequenceReview.dialog}
     {sceneMapPreparation.dialog}
-    {presentationAccess === "allowed" && presentation && presentation.connectionKey === realtimeConnectionKey && presentation.content.expiresAt > Date.now() && <PresentedContent content={presentation.content} onDismiss={() => {
-      dismissPresentation.current?.(presentation.content.id);
-      setPresentation(undefined);
-    }} />}
+    {playerPresentation.dialog}
     <RetryableActionNotice
       operation={campaignAction.operation}
       onRetry={campaignAction.retryAction ? () => void campaignAction.retryAction?.() : undefined}
