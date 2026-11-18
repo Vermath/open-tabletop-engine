@@ -1,3 +1,4 @@
+import { campaignCharacterClaimRoster, characterClaimOption } from "./character-claims.js";
 import { dnd5eSrdMonsterCatalog } from "@open-tabletop/system-sdk";
 import { registerCompendiumPlacementRoutes } from "./compendium-placement-routes.js";
 import { clampScenePoint, sceneGridSize, sceneGridOrigin, snapScenePointToGrid, snapTokenCenterToGrid } from "@open-tabletop/core";
@@ -5636,6 +5637,78 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const allowed = requireCampaignPermission(store, reply, request.headers, actor.campaignId, "actor.read");
     if (allowed !== true) return allowed;
     return actorPayloadForUser(store, currentUserId(store, request.headers)!, actor);
+  });
+
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/character-claims", async (request, reply) => {
+    const { campaignId } = request.params;
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "actor.read");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    const canManage = isCharacterClaimManager(store, campaignId, userId);
+    const roster = campaignCharacterClaimRoster(store.state, campaignId, canManage ? userId : undefined);
+    if (!canManage && (!store.state.members.some((member) => member.campaignId === campaignId && member.userId === userId && member.role === "player")
+      || !canCampaign(store, userId, campaignId, "actor.updateOwned") || !canCampaign(store, userId, campaignId, "scene.read") || !canCampaign(store, userId, campaignId, "token.read")
+      || roster.some(({ actor }) => actor.ownerUserId === userId))) return [];
+    return roster.filter(({ actor, eligible }) => canManage ? eligible || actor.characterClaimOffered : eligible && actor.characterClaimOffered)
+      .map(({ actor }) => characterClaimOption(actor));
+  });
+
+  app.post<{ Params: { campaignId: string; actorId: string }; Body: { expectedUpdatedAt: string; offered: boolean } }>("/api/v1/campaigns/:campaignId/actors/:actorId/claim-offer", async (request, reply) => {
+    const { campaignId, actorId } = request.params;
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "actor.update");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    if (!isCharacterClaimManager(store, campaignId, userId)) return forbidden(reply, "Only a GM who manages actors and tokens can offer a character");
+    if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Character offers require an Idempotency-Key header");
+    const entry = campaignCharacterClaimRoster(store.state, campaignId, userId).find(({ actor }) => actor.id === actorId);
+    if (!entry) return notFound(reply, "Character not found");
+    const { actor, eligible } = entry;
+    const revision = requireExpectedRevision(reply, { resourceType: "actor", resourceId: actor.id, currentUpdatedAt: actor.updatedAt, expectedUpdatedAt: request.body?.expectedUpdatedAt, current: characterClaimOption(actor), label: "Character" });
+    if (revision !== true) return revision;
+    if (typeof request.body?.offered !== "boolean") return badRequest(reply, "Choose whether to offer the character");
+    if (request.body.offered && !eligible) return conflict(reply, "Choose an unassigned character or one you own, with an available token on the active scene and no pending transfer");
+    actor.characterClaimOffered = request.body.offered;
+    if (request.body.offered) actor.characterClaimOfferedByUserId = userId;
+    else delete actor.characterClaimOfferedByUserId;
+    actor.updatedAt = nextRevisionTimestamp(actor.updatedAt);
+    appendServerAuditLog(store, userId, { campaignId, action: "actor.claim.offer", targetType: "actor", targetId: actor.id, after: { offered: actor.characterClaimOffered } });
+    store.save();
+    stageRequestEventsUntilDurableSave(request, () => broadcastActorUpdated(broadcast, actor));
+    return characterClaimOption(actor);
+  });
+
+  app.post<{ Params: { campaignId: string; actorId: string }; Body: { expectedUpdatedAt: string } }>("/api/v1/campaigns/:campaignId/actors/:actorId/claim", async (request, reply) => {
+    const { campaignId, actorId } = request.params;
+    for (const permission of ["actor.read", "actor.updateOwned", "scene.read", "token.read"] as const) {
+      const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, permission);
+      if (allowed !== true) return allowed;
+    }
+    const userId = currentUserId(store, request.headers)!;
+    if (!store.state.members.some((member) => member.campaignId === campaignId && member.userId === userId && member.role === "player")) return forbidden(reply, "Only a campaign player can claim a character");
+    if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Claiming a character requires an Idempotency-Key header");
+    const roster = campaignCharacterClaimRoster(store.state, campaignId);
+    const entry = roster.find(({ actor }) => actor.id === actorId);
+    if (!entry?.eligible || !entry.actor.characterClaimOffered || !entry.landingToken) return conflict(reply, "This character is no longer available to claim");
+    if (roster.some(({ actor }) => actor.ownerUserId === userId)) return conflict(reply, "You already own a character in this campaign");
+    const { actor, tokens, landingToken } = entry;
+    const revision = requireExpectedRevision(reply, { resourceType: "actor", resourceId: actor.id, currentUpdatedAt: actor.updatedAt, expectedUpdatedAt: request.body?.expectedUpdatedAt, current: characterClaimOption(actor), label: "Character" });
+    if (revision !== true) return revision;
+
+    actor.ownerUserId = userId;
+    delete actor.characterClaimOffered;
+    delete actor.characterClaimOfferedByUserId;
+    actor.updatedAt = nextRevisionTimestamp(actor.updatedAt);
+    for (const token of tokens) {
+      token.ownerUserIds = [userId];
+      token.updatedAt = nextRevisionTimestamp(token.updatedAt);
+    }
+    appendServerAuditLog(store, userId, { campaignId, action: "actor.claim", targetType: "actor", targetId: actor.id, after: { ownerUserId: userId, tokenIds: tokens.map((token) => token.id) } });
+    store.save();
+    stageRequestEventsUntilDurableSave(request, () => {
+      broadcastActorUpdated(broadcast, actor);
+      for (const token of tokens) broadcast(createEvent({ campaignId, type: "token.updated", actorUserId: userId, targetId: token.id, payload: token }));
+    });
+    return { actorId, sceneId: landingToken.sceneId, tokenId: landingToken.id };
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/character-transfers", async (request, reply) => {
@@ -21126,6 +21199,12 @@ function isTokenVisibleToUser(store: StateStore, userId: string, campaignId: str
 
 function isTokenOwnedByUser(store: StateStore, userId: string, token: Token): boolean {
   return Boolean(token.ownerUserIds?.includes(userId) || (token.actorId && store.state.actors.some((actor) => actor.id === token.actorId && actor.ownerUserId === userId)));
+}
+
+function isCharacterClaimManager(store: StateStore, campaignId: string, userId: string): boolean {
+  const member = store.state.members.find((entry) => entry.campaignId === campaignId && entry.userId === userId);
+  return Boolean(member && ["owner", "gm", "assistant_gm"].includes(member.role)
+    && canCampaign(store, userId, campaignId, "actor.update") && canCampaign(store, userId, campaignId, "token.update"));
 }
 
 function campaignMemberUserIds(store: StateStore, campaignId: string): Set<string> {

@@ -793,7 +793,23 @@ export interface TokenAura {
   color?: string;
 }
 
+export interface CharacterClaimOption {
+  actorId: ID;
+  name: string;
+  updatedAt: string;
+  offered: boolean;
+}
+
+export interface CharacterClaimResult {
+  actorId: ID;
+  sceneId: ID;
+  tokenId: ID;
+}
+
 export interface Actor extends Timestamps {
+  /** Explicit GM opt-in for a player character. */
+  characterClaimOffered?: boolean;
+  characterClaimOfferedByUserId?: ID;
   id: ID;
   campaignId: ID;
   worldId?: ID;
