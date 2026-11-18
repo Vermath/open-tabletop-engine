@@ -1,4 +1,6 @@
 import { randomInt } from "node:crypto";
+import { createEvent, type EngineEvent } from "@open-tabletop/core";
+import type { StateStore } from "./store.js";
 import type { RollableTable, RollableTableEntry, RollableTableInput } from "@open-tabletop/core";
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -24,6 +26,12 @@ export function validatedTable(input: unknown): RollableTableInput | undefined {
 
 export function visibleRollableTables(tables: RollableTable[], campaignId: string, canManage: boolean) {
   return tables.filter((table) => table.campaignId === campaignId && (canManage || table.visibility === "public"));
+}
+
+export function publishTableChange(store: StateStore, campaignId: string, userId: string, broadcast: (event: EngineEvent) => void) {
+  const campaign = store.state.campaigns.find((item) => item.id === campaignId)!;
+  store.save();
+  broadcast(createEvent({ campaignId, type: "campaign.updated", actorUserId: userId, targetId: campaign.id, payload: campaign }));
 }
 
 /** Each integer ticket belongs to exactly one entry's half-open interval. */
