@@ -569,7 +569,7 @@ export async function apiGet<T>(path: string, options: ApiRequestOptions = {}): 
   return response.json() as Promise<T>;
 }
 
-export async function apiPost<T>(path: string, body: unknown, options: ApiRequestOptions = {}): Promise<T> {
+export async function apiPost<T>(path: string, body: unknown, options: ApiRequestOptions & { onReplay?: () => void } = {}): Promise<T> {
   const response = await apiFetch(`${baseUrl}${path}`, {
     method: "POST",
     headers: { ...mutationHeaders(options), ...(await sessionHeaders()) },
@@ -577,6 +577,7 @@ export async function apiPost<T>(path: string, body: unknown, options: ApiReques
     signal: options.signal
   });
   if (!response.ok) throw await apiErrorFromResponse(response);
+  if (options.onReplay && response.headers?.get?.("idempotency-replayed") === "true") options.onReplay();
   return response.json() as Promise<T>;
 }
 

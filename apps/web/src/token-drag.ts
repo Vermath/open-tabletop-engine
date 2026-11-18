@@ -2,7 +2,8 @@ import type { Item, Token, TokenLayer } from "@open-tabletop/core";
 
 
 export interface TokenDropPayload {
-  type: "actor" | "asset";
+  type: "actor" | "asset" | "monster";
+  attemptId?: string;
   id: string;
   name: string;
   actorId?: string;
@@ -46,6 +47,10 @@ export function readTokenDropData(dataTransfer: DataTransfer): TokenDropPayload 
   if (!raw) return undefined;
   try {
     const parsed = JSON.parse(raw) as Partial<TokenDropPayload>;
+    if (parsed.type === "monster") {
+      if (typeof parsed.id !== "string" || typeof parsed.name !== "string" || typeof parsed.attemptId !== "string" || !parsed.attemptId) return undefined;
+      return { type: "monster", id: parsed.id, name: parsed.name, attemptId: parsed.attemptId };
+    }
     if ((parsed.type !== "actor" && parsed.type !== "asset") || typeof parsed.id !== "string" || typeof parsed.name !== "string") return undefined;
     return {
       type: parsed.type,

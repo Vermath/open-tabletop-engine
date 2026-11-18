@@ -1,3 +1,5 @@
+import { dnd5eSrdMonsterCatalog } from "@open-tabletop/system-sdk";
+import { registerCompendiumPlacementRoutes } from "./compendium-placement-routes.js";
 import { clampScenePoint, sceneGridSize, sceneGridOrigin, snapScenePointToGrid, snapTokenCenterToGrid } from "@open-tabletop/core";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
@@ -1632,7 +1634,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   const browserAllowedOrigins = configuredBrowserOrigins();
   await app.register(cors, {
     credentials: true,
-    exposedHeaders: ["x-otte-session-transport"],
+    exposedHeaders: ["x-otte-session-transport", "idempotency-replayed"],
     origin(origin, callback) {
       if (!origin || browserAllowedOrigins.includes(origin)) return callback(null, true);
       return callback(null, false);
@@ -10320,6 +10322,91 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return { threat, actor: actorPayloadForUser(store, userId, actor), ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, []) } : {}) };
   });
 
+  function prepareMonsterPlacement(reply: FastifyReply, scene: Scene, userId: string, rawPlacement: unknown, index: number): { actor: Actor; token: Token; result: EncounterMonsterPlacementResult } | FastifyReply {
+    const campaignId = scene.campaignId;
+    if (!isRecord(rawPlacement)) return badRequest(reply, `Encounter monster placement ${index + 1} must be an object`);
+    const threatId = normalizeNonEmptyString(rawPlacement.threatId);
+    const customMonsterItemId = normalizeNonEmptyString(rawPlacement.customMonsterItemId);
+    if (rawPlacement.threatId !== undefined && !threatId) return badRequest(reply, `Encounter monster placement ${index + 1} threatId must be a non-empty string`);
+    if (rawPlacement.customMonsterItemId !== undefined && !customMonsterItemId) return badRequest(reply, `Encounter monster placement ${index + 1} customMonsterItemId must be a non-empty string`);
+    if (Boolean(threatId) === Boolean(customMonsterItemId)) return badRequest(reply, `Encounter monster placement ${index + 1} must choose exactly one bundled threat or campaign custom monster`);
+    const customItem = customMonsterItemId
+      ? store.state.items.find((item) => item.id === customMonsterItemId && isDndCustomContentItem(item, campaignId) && item.type === "monster")
+      : undefined;
+    if (customMonsterItemId && !customItem) return notFound(reply, `Encounter monster placement ${index + 1} campaign custom monster not found`);
+    if (customItem && !canCampaign(store, userId, campaignId, "campaign.update")) return forbidden(reply, "Missing permission: campaign.update");
+    const bundledThreat = customItem ? undefined : dnd5eSrdEncounterThreats().find((item) => item.id === threatId);
+    if (!customItem && !bundledThreat) return notFound(reply, `Encounter monster placement ${index + 1} encounter threat not found`);
+    const customEntry = customItem ? dndCustomContentPayload(customItem).entry : undefined;
+    const threat = customEntry
+      ? { id: customEntry.id, systemId: customEntry.provenance.systemId, name: customEntry.name, summary: customEntry.summary, role: "custom", budget: Number(customEntry.data.xp ?? 0), challengeRating: String(customEntry.data.challengeRating ?? "0"), data: cloneRecord(customEntry.data), provenance: cloneCompendiumProvenance(customEntry.provenance) }
+      : bundledThreat!;
+    const data = customEntry ? dnd5eCustomMonsterActorData(customEntry) : dnd5eSrdMonsterActorData(threat.id);
+    if (!data) return notFound(reply, `Encounter monster placement ${index + 1} monster stat block not found`);
+    const ownerUserId = campaignActorOwnerUserId(store, campaignId, rawPlacement.ownerUserId, userId);
+    if (!ownerUserId.ok) return badRequest(reply, `Encounter monster placement ${index + 1}: ${ownerUserId.error}`);
+    if (rawPlacement.name !== undefined && typeof rawPlacement.name !== "string") return badRequest(reply, `Encounter monster placement ${index + 1} name must be a string`);
+    const requestedName = typeof rawPlacement.name === "string" ? rawPlacement.name.trim() : "";
+    if (requestedName.length > 160) return badRequest(reply, `Encounter monster placement ${index + 1} name must be at most 160 characters`);
+    const x = finiteNumberFromUnknown(rawPlacement.x);
+    const y = finiteNumberFromUnknown(rawPlacement.y);
+    const width = finiteNumberFromUnknown(rawPlacement.width);
+    const height = finiteNumberFromUnknown(rawPlacement.height);
+    if (x === undefined || y === undefined) return badRequest(reply, `Encounter monster placement ${index + 1} x and y must be finite numbers`);
+    if (width === undefined || height === undefined || width <= 0 || height <= 0) return badRequest(reply, `Encounter monster placement ${index + 1} width and height must be greater than zero`);
+    const normalizedLayer = normalizeTokenLayerPatch({ layer: rawPlacement.layer as TokenLayer | undefined });
+    if ("error" in normalizedLayer) return badRequest(reply, `Encounter monster placement ${index + 1}: ${normalizedLayer.error}`);
+    const disposition = rawPlacement.disposition;
+    if (disposition !== undefined && disposition !== "friendly" && disposition !== "neutral" && disposition !== "hostile") {
+      return badRequest(reply, `Encounter monster placement ${index + 1} disposition must be friendly, neutral, or hostile`);
+    }
+    const actor = createTimestamped("act", { campaignId, systemId: DND_5E_SRD_SYSTEM_ID, ownerUserId: ownerUserId.value, type: "monster", name: requestedName || threat.name, data: cloneRecord(data), permissions: {} }) satisfies Actor;
+    const token = createTimestamped("tok", {
+      sceneId: scene.id,
+      actorId: actor.id,
+      name: actor.name,
+      x,
+      y,
+      width,
+      height,
+      rotation: 0,
+      elevation: 0,
+      layer: normalizedLayer.patch.layer ?? "player",
+      hidden: false,
+      locked: false,
+      visionEnabled: true,
+      visionRadius: 160,
+      disposition: disposition ?? "hostile",
+      ownerUserIds: canReadHiddenTokens(store, userId, campaignId) ? [] : [userId],
+      notes: "",
+      conditions: [],
+      auras: [],
+      targetedByUserIds: [],
+      metadata: {},
+    }) satisfies Token;
+    const privateDataVisible = canReadActorPrivateData(store, userId, campaignId, actor);
+    return {
+      actor,
+      token,
+      result: {
+        threat: threat as unknown as Record<string, unknown>,
+        actor: actorPayloadForUser(store, userId, actor),
+        sceneToken: token,
+        ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, []) as unknown as Record<string, unknown> } : {}),
+      },
+    };
+  }
+
+  registerCompendiumPlacementRoutes(app, {
+    store, prepareMonsterPlacement, nextRevisionTimestamp, stageRequestEventsUntilDurableSave, broadcast,
+    requireCampaignPermission: (reply, headers, campaignId, permission) => requireCampaignPermission(store, reply, headers, campaignId, permission),
+    currentUserId: (headers) => currentUserId(store, headers),
+    actorForUser: (userId, actor) => actorPayloadForUser(store, userId, actor),
+    sceneForUser: (userId, scene) => scenePayloadForUser(store, userId, scene),
+    canReadScene: (userId, scene) => canReadSceneRecord(store, userId, scene),
+    appendAudit: (userId, input) => appendServerAuditLog(store, userId, input),
+  });
+
   app.post<{ Params: { sceneId: string }; Body: EncounterMonsterPlacementBatchInput }>("/api/v1/scenes/:sceneId/encounter-monster-placements", async (request, reply) => {
     const campaignId = campaignIdForScene(store, request.params.sceneId);
     if (!campaignId) return notFound(reply, "Scene not found");
@@ -10348,80 +10435,11 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return badRequest(reply, "Encounter monster placement requires between 1 and 100 placements");
     }
     const scene = store.state.scenes.find((candidate) => candidate.id === request.params.sceneId)!;
-    const defaultOwnerUserIds = !canReadHiddenTokens(store, userId, campaignId) ? [userId] : [];
     const prepared: Array<{ actor: Actor; token: Token; result: EncounterMonsterPlacementResult }> = [];
     for (const [index, rawPlacement] of rawBody.placements.entries()) {
-      if (!isRecord(rawPlacement)) return badRequest(reply, `Encounter monster placement ${index + 1} must be an object`);
-      const threatId = normalizeNonEmptyString(rawPlacement.threatId);
-      const customMonsterItemId = normalizeNonEmptyString(rawPlacement.customMonsterItemId);
-      if (rawPlacement.threatId !== undefined && !threatId) return badRequest(reply, `Encounter monster placement ${index + 1} threatId must be a non-empty string`);
-      if (rawPlacement.customMonsterItemId !== undefined && !customMonsterItemId) return badRequest(reply, `Encounter monster placement ${index + 1} customMonsterItemId must be a non-empty string`);
-      if (Boolean(threatId) === Boolean(customMonsterItemId)) return badRequest(reply, `Encounter monster placement ${index + 1} must choose exactly one bundled threat or campaign custom monster`);
-      const customItem = customMonsterItemId
-        ? store.state.items.find((item) => item.id === customMonsterItemId && isDndCustomContentItem(item, campaignId) && item.type === "monster")
-        : undefined;
-      if (customMonsterItemId && !customItem) return notFound(reply, `Encounter monster placement ${index + 1} campaign custom monster not found`);
-      if (customItem && !canCampaign(store, userId, campaignId, "campaign.update")) return forbidden(reply, "Missing permission: campaign.update");
-      const bundledThreat = customItem ? undefined : dnd5eSrdEncounterThreats().find((item) => item.id === threatId);
-      if (!customItem && !bundledThreat) return notFound(reply, `Encounter monster placement ${index + 1} encounter threat not found`);
-      const customEntry = customItem ? dndCustomContentPayload(customItem).entry : undefined;
-      const threat = customEntry
-        ? { id: customEntry.id, systemId: customEntry.provenance.systemId, name: customEntry.name, summary: customEntry.summary, role: "custom", budget: Number(customEntry.data.xp ?? 0), challengeRating: String(customEntry.data.challengeRating ?? "0"), data: cloneRecord(customEntry.data), provenance: cloneCompendiumProvenance(customEntry.provenance) }
-        : bundledThreat!;
-      const data = customEntry ? dnd5eCustomMonsterActorData(customEntry) : dnd5eSrdMonsterActorData(threat.id);
-      if (!data) return notFound(reply, `Encounter monster placement ${index + 1} monster stat block not found`);
-      const ownerUserId = campaignActorOwnerUserId(store, campaignId, rawPlacement.ownerUserId, userId);
-      if (!ownerUserId.ok) return badRequest(reply, `Encounter monster placement ${index + 1}: ${ownerUserId.error}`);
-      if (rawPlacement.name !== undefined && typeof rawPlacement.name !== "string") return badRequest(reply, `Encounter monster placement ${index + 1} name must be a string`);
-      const requestedName = typeof rawPlacement.name === "string" ? rawPlacement.name.trim() : "";
-      if (requestedName.length > 160) return badRequest(reply, `Encounter monster placement ${index + 1} name must be at most 160 characters`);
-      const x = finiteNumberFromUnknown(rawPlacement.x);
-      const y = finiteNumberFromUnknown(rawPlacement.y);
-      const width = finiteNumberFromUnknown(rawPlacement.width);
-      const height = finiteNumberFromUnknown(rawPlacement.height);
-      if (x === undefined || y === undefined) return badRequest(reply, `Encounter monster placement ${index + 1} x and y must be finite numbers`);
-      if (width === undefined || height === undefined || width <= 0 || height <= 0) return badRequest(reply, `Encounter monster placement ${index + 1} width and height must be greater than zero`);
-      const normalizedLayer = normalizeTokenLayerPatch({ layer: rawPlacement.layer as TokenLayer | undefined });
-      if ("error" in normalizedLayer) return badRequest(reply, `Encounter monster placement ${index + 1}: ${normalizedLayer.error}`);
-      const disposition = rawPlacement.disposition;
-      if (disposition !== undefined && disposition !== "friendly" && disposition !== "neutral" && disposition !== "hostile") {
-        return badRequest(reply, `Encounter monster placement ${index + 1} disposition must be friendly, neutral, or hostile`);
-      }
-      const actor = createTimestamped("act", { campaignId, systemId: system.id, ownerUserId: ownerUserId.value, type: "monster", name: requestedName || threat.name, data: cloneRecord(data), permissions: {} }) satisfies Actor;
-      const token = createTimestamped("tok", {
-        sceneId: scene.id,
-        actorId: actor.id,
-        name: actor.name,
-        x,
-        y,
-        width,
-        height,
-        rotation: 0,
-        elevation: 0,
-        layer: normalizedLayer.patch.layer ?? "player",
-        hidden: false,
-        locked: false,
-        visionEnabled: true,
-        visionRadius: 160,
-        disposition: disposition ?? "hostile",
-        ownerUserIds: [...defaultOwnerUserIds],
-        notes: "",
-        conditions: [],
-        auras: [],
-        targetedByUserIds: [],
-        metadata: {},
-      }) satisfies Token;
-      const privateDataVisible = canReadActorPrivateData(store, userId, campaignId, actor);
-      prepared.push({
-        actor,
-        token,
-        result: {
-          threat: threat as unknown as Record<string, unknown>,
-          actor: actorPayloadForUser(store, userId, actor),
-          sceneToken: token,
-          ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, []) as unknown as Record<string, unknown> } : {}),
-        },
-      });
+      const placement = prepareMonsterPlacement(reply, scene, userId, rawPlacement, index);
+      if (!("result" in placement)) return placement;
+      prepared.push(placement);
     }
     const placedTokenIds = prepared.map((placement) => placement.token.id);
     const encounterTokenIdsBefore = [...encounter.tokenIds];
@@ -10468,13 +10486,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return { import: privateDataVisible ? imported : { ...imported, data: {}, items: [] }, actor: actorPayloadForUser(store, userId, actor), items: items.map((item) => itemPayloadForUser(store, userId, item)), ...(privateDataVisible ? { sheet: systemSheetForStore(store, actor, items) } : {}) };
   });
 
-  app.get<{ Params: { campaignId: string; systemId: string }; Querystring: { q?: string; type?: string; types?: string } }>("/api/v1/campaigns/:campaignId/systems/:systemId/compendium", async (request, reply) => {
+  app.get<{ Params: { campaignId: string; systemId: string }; Querystring: { q?: string; type?: string; types?: string; includeMonsters?: boolean } }>("/api/v1/campaigns/:campaignId/systems/:systemId/compendium", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
     const system = findRegisteredSystem(store.state, request.params.systemId);
     if (!system) return notFound(reply, "System not found");
     const userId = currentUserId(store, request.headers);
     const catalog = campaignCompendiumEntries(store, request.params.campaignId, system.id, Boolean(userId && canCampaign(store, userId, request.params.campaignId, "campaign.update")));
+    if (request.query.includeMonsters === true && system.id === DND_5E_SRD_SYSTEM_ID) {
+      catalog.push(...dnd5eSrdMonsterCatalog());
+      catalog.sort((left, right) => left.name.localeCompare(right.name) || left.id.localeCompare(right.id));
+    }
     const entries = filteredCampaignCompendiumEntries(catalog, request.query);
     return {
       systemId: system.id,
@@ -19965,6 +19987,7 @@ const sharedMutationRevisionDescriptors: readonly SharedMutationRevisionDescript
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/([^/]+)\/ai\/(?:threads|memory(?:\/extract)?|session-recap|encounter-design|generate-map-asset|generate-token-asset)$/, collection: "campaigns", resourceType: "campaign" },
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/([^/]+)\/content-imports\/pdf\/ai$/, collection: "campaigns", resourceType: "campaign", expectedFrom: "query" },
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/scenes\/([^/]+)\/tokens$/, collection: "scenes", resourceType: "scene" },
+  { methods: new Set(["POST"]), pattern: /^\/api\/v1\/scenes\/([^/]+)\/compendium-monster-placements(?:\/[^/]+\/history)?$/, collection: "scenes", resourceType: "scene" },
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/scenes\/([^/]+)\/encounter-monster-placements$/, collection: "scenes", resourceType: "scene" },
   { methods: new Set(["PATCH", "DELETE"]), pattern: /^\/api\/v1\/campaigns\/([^/]+)$/, collection: "campaigns", resourceType: "campaign" },
   { methods: new Set(["POST"]), pattern: /^\/api\/v1\/campaigns\/([^/]+)\/(?:archive|restore)$/, collection: "campaigns", resourceType: "campaign" },
@@ -20074,6 +20097,10 @@ function sharedMutationCallerMayMutate(store: StateStore, userId: string, pathna
   if (world) return campaignPermission(world.campaignId, method === "DELETE" ? "world.delete" : "world.update");
   const scene = store.state.scenes.find((candidate) => candidate.id === record.id);
   if (scene) {
+    if (/\/compendium-monster-placements(?:\/[^/]+\/history)?$/.test(pathname)) {
+      const undo = pathname.endsWith("/history") && isRecord(body) && body.direction === "undo";
+      return canReadSceneRecord(store, userId, scene) && campaignPermission(scene.campaignId, undo ? "actor.delete" : "actor.create") && campaignPermission(scene.campaignId, undo ? "token.delete" : "token.create");
+    }
     if (/\/encounter-monster-placements$/.test(pathname)) return campaignPermission(scene.campaignId, "actor.create") && campaignPermission(scene.campaignId, "token.create") && campaignPermission(scene.campaignId, "combat.manage");
     if (/\/tokens$/.test(pathname)) return campaignPermission(scene.campaignId, "token.create");
     if (/\/delegations(?:\/|$)/.test(pathname)) return campaignPermission(scene.campaignId, "scene.update");

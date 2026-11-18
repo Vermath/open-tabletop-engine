@@ -1769,6 +1769,29 @@ export interface Encounter extends Timestamps {
   threats?: Array<{ id: ID; count: number }>;
 }
 
+export interface CompendiumMonsterPlacementInput {
+  entryId: string;
+  expectedUpdatedAt: string;
+  x: number;
+  y: number;
+}
+
+export interface CompendiumMonsterPlacement {
+  placementId: ID;
+  actor: Actor;
+  sceneToken: Token;
+  scene: Scene;
+}
+
+export interface CompendiumPlacementHistoryInput {
+  direction: "undo" | "redo";
+  expectedUpdatedAt: string;
+}
+
+export type CompendiumPlacementHistoryResult =
+  | { direction: "undo"; actorId: ID; tokenId: ID; scene: Scene }
+  | ({ direction: "redo" } & CompendiumMonsterPlacement);
+
 export interface EncounterMonsterPlacementDraft {
   threatId?: ID;
   customMonsterItemId?: ID;

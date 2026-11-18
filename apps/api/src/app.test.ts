@@ -463,6 +463,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   }
   if (path === "/api/v1/scenes/{sceneId}/edits" || path === "/api/v1/scenes/{sceneId}/undo") return { excluded: "scene_edit_undo" };
   if (path.endsWith("/path-measurement")) return { excluded: "interactive_tactical_adjudication" };
+  if (path.includes("/compendium-monster-placements")) return { excluded: "human_board_placement_gesture" };
   if (path.endsWith("/encounter-monster-placements")) return { tools: ["draft_actor_token_roster", "create_proposal"] };
   if (path.includes("/difficult-terrain") || path.includes("/cover-overrides")) return { tools: ["create_proposal", "read_board_state"] };
   if (path.includes("/scenes/{sceneId}/ai-edits/apply-to-target")) return { tools: ["draft_ai_edit_layer_apply", "apply_approved_proposal"] };
@@ -12450,6 +12451,8 @@ describe("api", () => {
       { method: "GET", url: "/api/v1/scenes/scn_vault_entry/tokens" },
       { method: "POST", url: "/api/v1/scenes/scn_vault_entry/tokens", payload: { name: "No Auth Token" } },
       { method: "POST", url: "/api/v1/scenes/scn_vault_entry/tokens/move", headers: { "idempotency-key": "auth-matrix-token-move-batch" }, payload: { expectedSceneUpdatedAt: "2020-01-01T00:00:00.000Z", changes: [{ tokenId: "tok_valen", x: 100, y: 100, expectedUpdatedAt: "2020-01-01T00:00:00.000Z" }] } },
+      { method: "POST", url: "/api/v1/scenes/scn_vault_entry/compendium-monster-placements", headers: { "idempotency-key": "auth-placement" }, payload: { entryId: "srd-monster:goblin-boss", x: 50, y: 50, expectedUpdatedAt: "2020-01-01T00:00:00.000Z" } },
+      { method: "POST", url: "/api/v1/scenes/scn_vault_entry/compendium-monster-placements/not-placed/history", headers: { "idempotency-key": "auth-placement-history" }, payload: { direction: "undo", expectedUpdatedAt: "2020-01-01T00:00:00.000Z" } },
       { method: "POST", url: "/api/v1/scenes/scn_vault_entry/encounter-monster-placements", headers: { "idempotency-key": "auth-matrix-encounter-monster-placement" }, payload: { encounterId: "enc_auth_matrix", systemId: "dnd-5e-srd", expectedUpdatedAt: "2020-01-01T00:00:00.000Z", placements: [{ threatId: "goblin-boss", x: 500, y: 350, width: 50, height: 50 }] } },
       { method: "POST", url: "/api/v1/tokens/tok_valen/target", payload: { targeted: true } },
       { method: "PATCH", url: "/api/v1/tokens/tok_valen", payload: { hidden: true } },
@@ -13296,6 +13299,8 @@ describe("api", () => {
       ["DELETE /api/v1/campaign-sessions/{sessionId}", 409],
       ["POST /api/v1/campaigns/{campaignId}/duplicate", 201],
       ["POST /api/v1/campaigns/{campaignId}/scene-duplications", 409],
+      ["POST /api/v1/scenes/{sceneId}/compendium-monster-placements", 409],
+      ["POST /api/v1/scenes/{sceneId}/compendium-monster-placements/{placementId}/history", 409],
       ["POST /api/v1/scenes/{sceneId}/encounter-monster-placements", 409],
       ["POST /api/v1/campaigns/{campaignId}/actors/{actorId}/transfers", 201],
       ["POST /api/v1/campaigns/{campaignId}/character-transfers/{transferId}/accept", 404],

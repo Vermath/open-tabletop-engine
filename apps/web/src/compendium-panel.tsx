@@ -1,3 +1,4 @@
+import { isPlaceableMonster, MonsterPlacementButton } from "./monster-placement-button.js";
 import type {
   Actor,
   CompendiumCatalogEntry,
@@ -80,6 +81,8 @@ interface CompendiumPanelProps {
   initialSystemId?: string;
   initialSearch?: string;
   initialEntryId?: string;
+  sceneId?: string;
+  onPlaceMonster?(entryId: string, attemptId: string): Promise<void>;
   canUpdateActor(actor: Actor): boolean;
   onMutation(result: { actor: Actor; item?: Item }): void;
   onStatus(message: string): void;
@@ -93,6 +96,8 @@ export function CompendiumPanel({
   initialSystemId,
   initialSearch,
   initialEntryId,
+  sceneId,
+  onPlaceMonster,
   canUpdateActor,
   onMutation,
   onStatus
@@ -155,7 +160,7 @@ export function CompendiumPanel({
     setLoadError("");
     const timer = window.setTimeout(() => {
       void apiGet<CompendiumCatalogResponse>(
-        compendiumCatalogPath(campaignId, systemId, search, typeFilter),
+        compendiumCatalogPath(campaignId, systemId, search, typeFilter, systemId === "dnd-5e-srd"),
         { signal: controller.signal }
       )
         .then((response) => {
@@ -394,6 +399,7 @@ export function CompendiumPanel({
               const purchasable = systemId === "dnd-5e-srd" && entry.type !== "condition" && numericCost(entry.data.costGp) >= 0;
               const updateState = compendiumEntryUpdateState(selectedActor, items, entry);
               const pending = pendingEntryId === entry.id;
+              const canImportEntry = !entry.id.startsWith("srd-monster:");
               return (
                 <article id={compendiumEntryAnchorId(entry.id)} tabIndex={-1} className="compendium-entry" key={entry.id} aria-busy={pending}>
                   <div className="compendium-entry-heading">
@@ -401,7 +407,7 @@ export function CompendiumPanel({
                       <strong>{entry.name}</strong>
                       <span>{entry.type}</span>
                     </div>
-                    <span className={`status-pill ${updateState.tone}`}>{updateState.label}</span>
+                    {canImportEntry && <span className={`status-pill ${updateState.tone}`}>{updateState.label}</span>}
                   </div>
                   <p>{entry.summary}</p>
                   <dl className="compendium-provenance">
@@ -419,27 +425,30 @@ export function CompendiumPanel({
                     {entry.provenance.license.attribution && <div><dt>Attribution</dt><dd>{entry.provenance.license.attribution}</dd></div>}
                   </dl>
                   <div className="compendium-entry-actions">
-                    {purchasable && (
-                      <label>
-                        Quantity
-                        <input
-                          aria-label={`${entry.name} purchase quantity`}
-                          type="number"
-                          min={1}
-                          max={99}
-                          value={quantity}
-                          onChange={(event) => setQuantities((current) => ({ ...current, [entry.id]: normalizedQuantity(Number(event.target.value)) }))}
-                        />
-                      </label>
-                    )}
-                    <button className="ghost-button" type="button" disabled={!canMutateSelectedActor || pending} onClick={() => beginMutation("import", entry)}>
-                      {pending ? "Working..." : selectedActor ? `Import to ${selectedActor.name}` : "Choose actor to import"}
-                    </button>
-                    {purchasable && (
-                      <button className="ghost-button" type="button" disabled={!canMutateSelectedActor || pending} onClick={() => beginMutation("purchase", entry)}>
-                        {pending ? "Working..." : selectedActor ? `Purchase for ${purchaseCost} gp` : "Choose actor to purchase"}
+                    {isPlaceableMonster(entry) && <MonsterPlacementButton entry={entry} sceneId={sceneId} onPlace={onPlaceMonster} />}
+                    {canImportEntry && <>
+                      {purchasable && (
+                        <label>
+                          Quantity
+                          <input
+                            aria-label={`${entry.name} purchase quantity`}
+                            type="number"
+                            min={1}
+                            max={99}
+                            value={quantity}
+                            onChange={(event) => setQuantities((current) => ({ ...current, [entry.id]: normalizedQuantity(Number(event.target.value)) }))}
+                          />
+                        </label>
+                      )}
+                      <button className="ghost-button" type="button" disabled={!canMutateSelectedActor || pending} onClick={() => beginMutation("import", entry)}>
+                        {pending ? "Working..." : selectedActor ? `Import to ${selectedActor.name}` : "Choose actor to import"}
                       </button>
-                    )}
+                      {purchasable && (
+                        <button className="ghost-button" type="button" disabled={!canMutateSelectedActor || pending} onClick={() => beginMutation("purchase", entry)}>
+                          {pending ? "Working..." : selectedActor ? `Purchase for ${purchaseCost} gp` : "Choose actor to purchase"}
+                        </button>
+                      )}
+                    </>}
                   </div>
                 </article>
               );
@@ -553,10 +562,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function compendiumCatalogPath(campaignId: string, systemId: string, search = "", type = ""): string {
+export function compendiumCatalogPath(campaignId: string, systemId: string, search = "", type = "", includeMonsters = false): string {
   const query = new URLSearchParams();
   if (search.trim()) query.set("q", search.trim());
   if (type.trim()) query.set("type", type.trim());
+  if (includeMonsters) query.set("includeMonsters", "true");
   const suffix = query.size > 0 ? `?${query.toString()}` : "";
   return `/api/v1/campaigns/${encodeURIComponent(campaignId)}/systems/${encodeURIComponent(systemId)}/compendium${suffix}`;
 }
