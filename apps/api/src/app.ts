@@ -74,6 +74,7 @@ import {
   type ContentImportEntityKind,
   type ContentImportSource,
   type DiceMacro,
+  type RollableTable,
   type DiceRoll,
   type DiceRollFairness,
   type EmailOutboxMessage,
@@ -341,6 +342,7 @@ import { activeCombatForTypedDamage, dndTypedDamageCombatantChanges } from "./dn
 import { registerSceneDelegationRoutes } from "./scene-delegation-routes.js";
 import { exceedsSceneVisionBudget, MAX_SCENE_LIGHTS, MAX_SCENE_WALLS, SceneVisionBudgetError } from "./scene-vision-budget.js";
 import { registerUniversalVttImportRoute } from "./universal-vtt-import.js";
+import { drawTableEntry, validatedTable, visibleRollableTables } from "./rollable-tables.js";
 import { registerCampaignSessionRoutes } from "./campaign-session-routes.js";
 import { registerCampaignWebhookRoutes } from "./campaign-webhook-routes.js";
 import { CAMPAIGN_WEBHOOK_QUEUE_MAX_PENDING_DELIVERIES, CAMPAIGN_WEBHOOK_SUBSCRIPTION_LIMIT_PER_CAMPAIGN, createCampaignWebhookDelivery, pruneCampaignWebhookCampaignLedger, pruneCampaignWebhookDeliveryLedger, pruneCampaignWebhookLedgers } from "./campaign-webhook-ledger.js";
@@ -6930,6 +6932,97 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return pagination.requested ? paginateList(rolls, pagination) : rolls;
   });
 
+  type TableParams = { campaignId: string; tableId: string };
+  const getTable = ({ campaignId, tableId }: TableParams) => store.state.rollableTables.find((table) => table.id === tableId && table.campaignId === campaignId);
+  function tablesChanged(campaignId: string, userId: string) {
+    const campaign = store.state.campaigns.find((item) => item.id === campaignId)!;
+    store.save();
+    broadcast(createEvent({ campaignId, type: "campaign.updated", actorUserId: userId, targetId: campaign.id, payload: campaign }));
+  }
+
+  app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/rollable-tables", async (request, reply) => {
+    const { campaignId } = request.params;
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "campaign.read");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    const canManage = canCampaign(store, userId, campaignId, "campaign.update");
+    if (!canManage && !canCampaign(store, userId, campaignId, "dice.roll")) return forbidden(reply, "Cannot read rollable tables");
+    return visibleRollableTables(store.state.rollableTables, campaignId, canManage);
+  });
+
+  app.post<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/rollable-tables", async (request, reply) => {
+    const { campaignId } = request.params;
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Creating a rollable table requires an Idempotency-Key header");
+    const input = validatedTable(request.body);
+    if (!input) return badRequest(reply, "Provide a name, category, visibility and 1–100 text entries with integer weights from 1 to 10000");
+    const table = createTimestamped("tbl", { campaignId, ...input }) satisfies RollableTable;
+    store.state.rollableTables.push(table);
+    tablesChanged(campaignId, currentUserId(store, request.headers)!);
+    return table;
+  });
+
+  app.patch<{ Params: TableParams; Body: Partial<RollableTable> & { expectedUpdatedAt?: unknown } }>("/api/v1/campaigns/:campaignId/rollable-tables/:tableId", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    const table = getTable(request.params);
+    if (!table) return notFound(reply, "Rollable table not found");
+    if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Updating a rollable table requires an Idempotency-Key header");
+    const revision = requireExpectedRevision(reply, { resourceType: "rollable_table", resourceId: table.id, currentUpdatedAt: table.updatedAt, expectedUpdatedAt: request.body?.expectedUpdatedAt, current: table, label: "Rollable table" });
+    if (revision !== true) return revision;
+    const input = validatedTable({ ...table, ...request.body });
+    if (!input) return badRequest(reply, "Invalid rollable table definition");
+    Object.assign(table, input, { updatedAt: nextRevisionTimestamp(table.updatedAt) });
+    tablesChanged(table.campaignId, currentUserId(store, request.headers)!);
+    return table;
+  });
+
+  app.delete<{ Params: TableParams; Querystring: { expectedUpdatedAt?: string } }>("/api/v1/campaigns/:campaignId/rollable-tables/:tableId", async (request, reply) => {
+    const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    const table = getTable(request.params);
+    if (!table) return notFound(reply, "Rollable table not found");
+    if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Deleting a rollable table requires an Idempotency-Key header");
+    const revision = requireExpectedRevision(reply, { resourceType: "rollable_table", resourceId: table.id, currentUpdatedAt: table.updatedAt, expectedUpdatedAt: request.query.expectedUpdatedAt, current: table, label: "Rollable table" });
+    if (revision !== true) return revision;
+    store.state.rollableTables = store.state.rollableTables.filter((item) => item.id !== table.id);
+    tablesChanged(table.campaignId, currentUserId(store, request.headers)!);
+    return table;
+  });
+
+  app.post<{ Params: TableParams; Body: { visibility?: unknown } }>("/api/v1/campaigns/:campaignId/rollable-tables/:tableId/draw", async (request, reply) => {
+    const { campaignId } = request.params;
+    for (const permission of ["dice.roll", "chat.write"] as const) {
+      const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, permission);
+      if (allowed !== true) return allowed;
+    }
+    const userId = currentUserId(store, request.headers)!;
+    const canManage = canCampaign(store, userId, campaignId, "campaign.update");
+    const table = getTable(request.params);
+    if (!table || (!canManage && table.visibility === "gm_only")) return notFound(reply, "Rollable table not found");
+    const key = opaqueHeaderText(request.headers["idempotency-key"]);
+    if (!key) return badRequest(reply, "Drawing from a table requires an Idempotency-Key header");
+    const visibility = request.body?.visibility;
+    if (visibility !== "gm_only" && visibility !== "public") return badRequest(reply, "Choose a draw audience");
+    if (visibility === "gm_only" && !canManage) return forbidden(reply, "Only campaign managers can draw privately");
+    if (visibility === "public" && table.visibility === "gm_only") return badRequest(reply, "This table only allows GM-private draws");
+    // Chat outlives the bounded replay ledger. Retrying the same draw can recover
+    // its result even after ledger rotation or a session change.
+    const messageId = `msg_table_${hashStableJson([userId, key])}`;
+    const previous = store.state.chat.find((item) => item.id === messageId);
+    if (previous) {
+      if (previous.rollableTableId !== table.id || previous.campaignId !== campaignId || previous.visibility !== visibility || previous.userId !== userId) return conflict(reply, "Idempotency-Key was already used for a different draw");
+      return reply.header("Idempotency-Replayed", "true").send(previous);
+    }
+    const entry = drawTableEntry(table.entries);
+    const message = createTimestamped("msg", { id: messageId, campaignId, userId, type: "system" as const, visibility, recipientUserIds: [], rollableTableId: table.id, body: `${table.name}: ${entry.text}` }) satisfies ChatMessage;
+    store.state.chat.push(message);
+    store.save();
+    broadcast(createEvent({ campaignId, type: "chat.message.created", actorUserId: userId, targetId: message.id, payload: message }));
+    return message;
+  });
+
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/dice-macros", async (request, reply) => {
     const userId = requireUser(store, reply, request.headers);
     if (typeof userId !== "string") return userId;
@@ -7131,6 +7224,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const canModerate = canCampaign(store, userId, message.campaignId, "chat.moderate");
     const canEditOwn = message.userId === userId && canCampaign(store, userId, message.campaignId, "chat.write");
     if (!canModerate && !canEditOwn) return forbidden(reply, "Missing permission: chat.write or chat.moderate");
+    if (message.rollableTableId) return badRequest(reply, "Table draw results cannot be edited");
     const parsedBody = parseChatMessageEditBody(request.body, reply);
     if (!parsedBody.ok) return parsedBody.reply;
     const previousBody = message.body;
@@ -24051,6 +24145,7 @@ interface CampaignSnapshotResult {
   chat: ChatMessage[];
   rolls: DiceRoll[];
   diceMacros: DiceMacro[];
+  rollableTables: RollableTable[];
   encounters: Encounter[];
   combats: Combat[];
   proposals: Proposal[];
@@ -24189,6 +24284,7 @@ function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Camp
     handouts: canHandout ? store.state.handouts.filter((handout) => handout.campaignId === campaignId && canReadHandout(store, userId, handout)).map((handout) => normalizeHandout(handout)) : [],
     chat: canChat ? store.state.chat.filter((message) => message.campaignId === campaignId && canReadChatMessage(store, userId, message)) : [],
     rolls: canChat ? store.state.rolls.filter((roll) => roll.campaignId === campaignId && canReadDiceRoll(store, userId, roll, linkedMessagesByRollId.get(roll.id))) : [],
+    rollableTables: canDice || canManage ? visibleRollableTables(store.state.rollableTables, campaignId, canManage) : [],
     diceMacros: canDice ? store.state.diceMacros.filter((macro) => macro.campaignId === campaignId && (macro.visibility === "public" || canManage)) : [],
     encounters: store.state.encounters.filter((encounter) => encounter.campaignId === campaignId && (canViewPrep || store.state.combats.some((combat) => combat.campaignId === campaignId && combat.active && combat.encounterId === encounter.id))),
     combats: store.state.combats.filter((combat) => combat.campaignId === campaignId).map((combat) => combatPayloadForUser(store, userId, combat)),
@@ -25620,6 +25716,7 @@ function removeCampaignRecords(store: StateStore, campaignId: string): void {
   store.state.handouts = store.state.handouts.filter((item) => item.campaignId !== campaignId);
   store.state.chat = store.state.chat.filter((item) => item.campaignId !== campaignId);
   store.state.rolls = store.state.rolls.filter((item) => item.campaignId !== campaignId);
+  store.state.rollableTables = store.state.rollableTables.filter((table) => table.campaignId !== campaignId);
   store.state.diceMacros = store.state.diceMacros.filter((item) => item.campaignId !== campaignId);
   store.state.audioTracks = store.state.audioTracks.filter((item) => item.campaignId !== campaignId);
   store.state.encounters = store.state.encounters.filter((item) => item.campaignId !== campaignId);
@@ -28849,7 +28946,7 @@ function staleWriteConflict(reply: FastifyReply, input: { resourceType: Revision
   return reply.code(409).send({ error: "conflict", code: "stale_write", message: `${input.resourceType === "actor" ? "Actor" : input.resourceType === "campaign" ? "Campaign" : input.resourceType === "combat" ? "Combat" : input.resourceType === "item" ? "Item" : input.resourceType === "scene" ? "Scene" : input.resourceType === "token" ? "Token" : input.resourceType === "user" ? "Profile" : "Journal entry"} changed after this action was prepared. Review the latest state and retry.`, resourceType: input.resourceType, resourceId: input.resourceId, expectedUpdatedAt: input.expectedUpdatedAt, currentUpdatedAt: input.currentUpdatedAt, current: input.current });
 }
 
-type RevisionResourceType = "actor" | "calculation_override" | "campaign" | "campaign_invite" | "campaign_member" | "campaign_session" | "character_transfer" | "combat" | "content_import" | "item" | "journal" | "organization" | "organization_member" | "plugin_storage" | "scene" | "token" | "user" | "world_record" | "world_relation";
+type RevisionResourceType = "rollable_table" | "actor" | "calculation_override" | "campaign" | "campaign_invite" | "campaign_member" | "campaign_session" | "character_transfer" | "combat" | "content_import" | "item" | "journal" | "organization" | "organization_member" | "plugin_storage" | "scene" | "token" | "user" | "world_record" | "world_relation";
 
 function nextRevisionTimestamp(current: string): string {
   const now = Date.now();

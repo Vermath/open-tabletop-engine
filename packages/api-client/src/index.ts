@@ -86,6 +86,8 @@ import type {
   DndRulesMutationUndoRequest,
   DndRulesMutationUndoResult,
   DiceMacro,
+  RollableTable,
+  RollableTableInput,
   DiceRoll,
   DiceRollFairness,
   Encounter,
@@ -671,6 +673,7 @@ export interface CampaignSnapshot {
   chat: ChatMessage[];
   rolls: DiceRoll[];
   diceMacros: DiceMacro[];
+  rollableTables: RollableTable[];
   encounters: Encounter[];
   combats: Combat[];
   proposals: Proposal[];
@@ -4094,6 +4097,26 @@ export class OpenTabletopClient {
       parameters.set("historyLimit", String(historyLimit));
     const query = parameters.size > 0 ? `?${parameters.toString()}` : "";
     return this.get(`${routes.campaignSnapshot(campaignId)}${query}`);
+  }
+
+  async rollableTables(campaignId: string): Promise<RollableTable[]> {
+    return this.get(routes.rollableTables(campaignId));
+  }
+
+  async createRollableTable(campaignId: string, input: RollableTableInput, idempotencyKey: string): Promise<RollableTable> {
+    return this.post(routes.rollableTables(campaignId), input, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async updateRollableTable(campaignId: string, tableId: string, input: Partial<RollableTableInput> & { expectedUpdatedAt: string }, idempotencyKey: string): Promise<RollableTable> {
+    return this.patch(routes.rollableTable(campaignId, tableId), input, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async deleteRollableTable(campaignId: string, tableId: string, expectedUpdatedAt: string, idempotencyKey: string): Promise<RollableTable> {
+    return this.delete(`${routes.rollableTable(campaignId, tableId)}?${new URLSearchParams({ expectedUpdatedAt })}`, undefined, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async drawRollableTable(campaignId: string, tableId: string, visibility: RollableTable["visibility"], idempotencyKey: string): Promise<ChatMessage> {
+    return this.post(routes.drawRollableTable(campaignId, tableId), { visibility }, { "Idempotency-Key": idempotencyKey });
   }
 
   async diceMacros(campaignId: string): Promise<DiceMacro[]> {

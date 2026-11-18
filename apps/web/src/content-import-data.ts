@@ -409,4 +409,4 @@ export function childAssetFolderOptions(folderOptions: string[], currentFolder: 
 
 export type ArchiveImportScope = "all" | "assets_only" | "selected_collections";
 
-export type ArchiveImportCollection = "assets" | "scenes" | "tokens" | "actors" | "items" | "journals" | "handouts" | "chat" | "rolls" | "diceMacros" | "encounters" | "combats" | "contentImports" | "fogPresets";
+export type ArchiveImportCollection = "assets" | "scenes" | "tokens" | "actors" | "items" | "journals" | "handouts" | "chat" | "rolls" | "diceMacros" | "rollableTables" | "encounters" | "combats" | "contentImports" | "fogPresets";

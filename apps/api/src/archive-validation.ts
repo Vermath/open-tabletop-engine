@@ -1,3 +1,4 @@
+import { validTableEntries } from "./rollable-tables.js";
 import { validMapPinCollection } from "./scene-map-pins.js";
 import { createHash } from "node:crypto";
 import { emptyState, type Actor, type CampaignArchive, type EngineState, type Item } from "@open-tabletop/core";
@@ -127,6 +128,9 @@ const archiveRecordRules: Partial<Record<keyof EngineState, FieldRule[]>> = {
     ids("recipientUserIds")
   ],
   rolls: [id("campaignId"), id("userId"), name("formula"), enumeration("visibility", "public", "gm_only", "whisper"), array("terms"), number("total")],
+  rollableTables: [id("campaignId"), { field: "name", valid: (value) => typeof value === "string" && value.trim().length > 0 && value.length <= 100, expected: "a table name of 1 to 100 characters" },
+    enumeration("category", "loot", "encounter", "rumor"), enumeration("visibility", "public", "gm_only"),
+    { field: "entries", valid: validTableEntries, expected: "1 to 100 weighted text entries" }],
   diceMacros: [id("campaignId"), id("createdBy"), name("name"), name("formula"), enumeration("visibility", "public", "gm_only")],
   audioTracks: [
     id("campaignId"),
@@ -356,6 +360,7 @@ export function campaignArchiveAssetMaxFiles(): number {
 }
 
 function validateNestedArchiveRecord(collection: string, record: Record<string, unknown>): string | undefined {
+  if (collection === "chat" && record.rollableTableId !== undefined && !nonEmptyString(record.rollableTableId)) return "rollableTableId must be an identifier";
   if (collection === "journals") {
     if (record.kind !== undefined && !oneOf("folder", "entry")(record.kind)) return "kind must be folder or entry";
     if (record.canonStatus !== undefined && !oneOf("draft", "in_review", "canonical", "rejected")(record.canonStatus)) return "canonStatus must be a supported review state";

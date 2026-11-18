@@ -162,6 +162,7 @@ const APPEND_ONLY_IDEMPOTENCY_RULES: readonly RegExp[] = [
   /^POST \/api\/v1\/campaigns\/:[^/]+\/journal$/,
   /^POST \/api\/v1\/dice\/roll$/,
   /^POST \/api\/v1\/campaigns\/:[^/]+\/dice-macros$/,
+  /^POST \/api\/v1\/campaigns\/:[^/]+\/rollable-tables(?:\/:[^/]+\/draw)?$/,
   /^POST \/api\/v1\/campaigns\/:[^/]+\/audio$/,
   /^POST \/api\/v1\/chat\/messages$/,
   /^POST \/api\/v1\/campaigns\/:[^/]+\/content-imports\/preview$/,
@@ -280,8 +281,8 @@ describe("non-AI mutation route contract", () => {
   const centralDescriptors = extractCentralGuardDescriptors(appSource);
 
   it("keeps the current mutation inventory explicit and classified", () => {
-    expect(routes).toHaveLength(259);
-    expect(routes.filter((route) => route.sourceName === "app.ts")).toHaveLength(214);
+    expect(routes).toHaveLength(263);
+    expect(routes.filter((route) => route.sourceName === "app.ts")).toHaveLength(218);
     expect(routes.filter((route) => route.sourceName === "calculation-override-routes.ts")).toHaveLength(2);
     expect(routes.filter((route) => route.sourceName === "archive-operations.ts")).toHaveLength(0);
     expect(routes.filter((route) => route.sourceName === "asset-operations.ts")).toHaveLength(0);
