@@ -5649,7 +5649,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!canManage && (!store.state.members.some((member) => member.campaignId === campaignId && member.userId === userId && member.role === "player")
       || !canCampaign(store, userId, campaignId, "actor.updateOwned") || !canCampaign(store, userId, campaignId, "scene.read") || !canCampaign(store, userId, campaignId, "token.read")
       || roster.some(({ actor }) => actor.ownerUserId === userId))) return [];
-    return roster.filter(({ actor, eligible }) => canManage ? eligible || actor.characterClaimOffered : eligible && actor.characterClaimOffered)
+    return roster.filter(({ actor, eligible }) => canManage
+      ? (eligible || actor.characterClaimOffered) && canReadActorPrivateData(store, userId, campaignId, actor)
+      : eligible && characterOfferIsAuthorized(store, actor))
       .map(({ actor }) => characterClaimOption(actor));
   });
 
@@ -5663,6 +5665,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const entry = campaignCharacterClaimRoster(store.state, campaignId, userId).find(({ actor }) => actor.id === actorId);
     if (!entry) return notFound(reply, "Character not found");
     const { actor, eligible } = entry;
+    if (!canReadActorPrivateData(store, userId, campaignId, actor)) return forbidden(reply, "Missing permission: actor.readPrivate");
     const revision = requireExpectedRevision(reply, { resourceType: "actor", resourceId: actor.id, currentUpdatedAt: actor.updatedAt, expectedUpdatedAt: request.body?.expectedUpdatedAt, current: characterClaimOption(actor), label: "Character" });
     if (revision !== true) return revision;
     if (typeof request.body?.offered !== "boolean") return badRequest(reply, "Choose whether to offer the character");
@@ -5688,7 +5691,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Claiming a character requires an Idempotency-Key header");
     const roster = campaignCharacterClaimRoster(store.state, campaignId);
     const entry = roster.find(({ actor }) => actor.id === actorId);
-    if (!entry?.eligible || !entry.actor.characterClaimOffered || !entry.landingToken) return conflict(reply, "This character is no longer available to claim");
+    if (!entry?.eligible || !entry.landingToken || !characterOfferIsAuthorized(store, entry.actor)) return conflict(reply, "This character is no longer available to claim");
     if (roster.some(({ actor }) => actor.ownerUserId === userId)) return conflict(reply, "You already own a character in this campaign");
     const { actor, tokens, landingToken } = entry;
     const revision = requireExpectedRevision(reply, { resourceType: "actor", resourceId: actor.id, currentUpdatedAt: actor.updatedAt, expectedUpdatedAt: request.body?.expectedUpdatedAt, current: characterClaimOption(actor), label: "Character" });
@@ -21199,6 +21202,14 @@ function isTokenVisibleToUser(store: StateStore, userId: string, campaignId: str
 
 function isTokenOwnedByUser(store: StateStore, userId: string, token: Token): boolean {
   return Boolean(token.ownerUserIds?.includes(userId) || (token.actorId && store.state.actors.some((actor) => actor.id === token.actorId && actor.ownerUserId === userId)));
+}
+
+function characterOfferIsAuthorized(store: StateStore, actor: Actor): boolean {
+  if (!actor.characterClaimOffered) return false;
+  // A starter-created offer belongs to the campaign owner.
+  const managerId = actor.characterClaimOfferedByUserId ?? store.state.campaigns.find((campaign) => campaign.id === actor.campaignId)?.ownerUserId;
+  return Boolean(managerId && isActiveUserId(store, managerId) && isCharacterClaimManager(store, actor.campaignId, managerId)
+    && canReadActorPrivateData(store, managerId, actor.campaignId, actor));
 }
 
 function isCharacterClaimManager(store: StateStore, campaignId: string, userId: string): boolean {

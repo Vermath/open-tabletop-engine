@@ -1,5 +1,6 @@
 import { routes, type CharacterClaimOption } from "@open-tabletop/api-contracts";
-import { describe, expect, it } from "vitest";
+import * as core from "@open-tabletop/core";
+import { describe, expect, it, vi } from "vitest";
 import { buildApp } from "./app.js";
 import { MemoryStateStore } from "./store.js";
 
@@ -18,7 +19,7 @@ function prepareRoster(store: MemoryStateStore) {
   return { actor, token };
 }
 
-async function acceptPlayer(app: Awaited<ReturnType<typeof buildApp>>, name: string, role: "player" | "observer" = "player") {
+async function acceptPlayer(app: Awaited<ReturnType<typeof buildApp>>, name: string, role: "player" | "observer" | "assistant_gm" = "player") {
   const email = `${name}@example.test`;
   const invite = await app.inject({ method: "POST", url: `/api/v1/campaigns/${campaignId}/invites`, headers: { ...gm, ...mutation("invite-" + name) }, payload: { email, role } });
   expect(invite.statusCode, invite.body).toBe(200);
@@ -107,6 +108,38 @@ describe("campaign player character claims", () => {
       expect(store.state.tokens.find((candidate) => candidate.id === token.id)?.ownerUserIds).toEqual([]);
       expect(store.state.auditLogs.some((event) => event.action === "actor.claim")).toBe(false);
       expect((await claim()).statusCode).toBe(200);
+    } finally { await app.close(); }
+  });
+
+  it("requires private-sheet access for both the offer and its later redemption", async () => {
+    const store = new MemoryStateStore();
+    const { actor } = prepareRoster(store);
+    const app = await buildApp({ store });
+    try {
+      const assistant = await acceptPlayer(app, "claim-assistant", "assistant_gm");
+      const player = await acceptPlayer(app, "claim-scoped-player");
+      // Exercise a scoped assistant independently of the default role's broad grants.
+      const original = core.hasPermission;
+      const permissions = vi.spyOn(core, "hasPermission").mockImplementation((input) =>
+        !(input.userId === assistant.userId && input.permission === "actor.readPrivate") && original(input));
+      try {
+        const options = async (headers: Record<string, string>) => (await app.inject({ url: routes.characterClaims(campaignId), headers })).json();
+        const offer = (key: string) => app.inject({ method: "POST", url: routes.characterClaimOffer(campaignId, actor.id), headers: { ...assistant.headers, ...mutation(key) }, payload: { offered: true, expectedUpdatedAt: actor.updatedAt } });
+        expect(await options(assistant.headers)).toEqual([]);
+        expect((await offer("assistant-no-access")).statusCode).toBe(403);
+        actor.permissions[assistant.userId] = ["actor.readPrivate"];
+        const offered = await offer("assistant-shared");
+        expect(offered.statusCode, offered.body).toBe(200);
+        expect(await options(player.headers)).toEqual([offered.json()]);
+        delete actor.permissions[assistant.userId];
+        expect(await options(player.headers)).toEqual([]);
+        const claim = (key: string) => app.inject({ method: "POST", url: routes.characterClaim(campaignId, actor.id), headers: { ...player.headers, ...mutation(key) }, payload: { expectedUpdatedAt: actor.updatedAt } });
+        expect((await claim("assistant-revoked")).statusCode).toBe(409);
+        actor.permissions[assistant.userId] = ["actor.readPrivate"];
+        store.state.members.find((member) => member.userId === assistant.userId && member.campaignId === campaignId)!.role = "observer";
+        expect((await claim("assistant-demoted")).statusCode).toBe(409);
+        expect(actor.ownerUserId).toBeUndefined();
+      } finally { permissions.mockRestore(); }
     } finally { await app.close(); }
   });
 

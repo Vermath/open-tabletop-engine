@@ -52,7 +52,12 @@ test("an invited player claims a GM-prepared character, reconnects to its token 
     await expect(player.getByRole("region", { name: "Choose your character" })).toHaveCount(0);
     await player.reload();
     await expect(token).toHaveAttribute("aria-pressed", "true");
-    const rollResponse = player.waitForResponse((response) => response.request().method() === "POST" && response.url().endsWith(`/actors/${fixture.actorId}/roll`));
+    const rollResponse = player.waitForResponse((response) => {
+      const request = response.request();
+      if (request.method() !== "POST" || !response.url().endsWith(`/actors/${fixture.actorId}/roll`)) return false;
+      const body = request.postDataJSON();
+      return body.rollId === "ability-strength" && body.commit !== false && body.prepare !== true;
+    });
     await player.getByRole("button", { name: /Roll Strength check/ }).click();
     const roll = await rollResponse;
     expect(roll.status(), await roll.text()).toBe(200);
