@@ -2314,6 +2314,7 @@ describe("OpenTabletopClient", () => {
         "2026-07-13T00:00:00.000Z",
         "journal-delete-client",
       ),
+      client.presentContent(campaignId, { targetType: "handout", targetId: handoutId, expectedUpdatedAt: "2026-07-13T00:00:00.000Z", recipientUserIds: ["usr_player"] }),
       client.handouts(campaignId),
       client.createHandout(
         campaignId,

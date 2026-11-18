@@ -257,6 +257,7 @@ export const routes = {
     `/api/v1/journal/${pathPart(entryId)}/history`,
   journalCanonReview: (entryId: string) =>
     `/api/v1/journal/${pathPart(entryId)}/canon-review`,
+  presentations: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/presentations`,
   handouts: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/handouts`,
   handout: (handoutId: string) => `/api/v1/handouts/${pathPart(handoutId)}`,

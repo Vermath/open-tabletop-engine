@@ -7,7 +7,7 @@ import { basename, extname, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { aiCitationWarnings, buildPermissionFilteredContext, filterPermissionFilteredContextByScopes, validateAiCitationClaims, type AiBoardCaptureResult, type AiMessage, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiReasoningEffort, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
-import { apiContractPolicy, apiVersion, apiVersionHeader, openApiSpec, type AdminAiThreadSummary, type AdminAiToolCallSummary } from "@open-tabletop/api-contracts";
+import { apiContractPolicy, apiVersion, apiVersionHeader, openApiSpec, type PresentContentRequest, type AdminAiThreadSummary, type AdminAiToolCallSummary } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, CodexAppServerWebSocketTransport, LoopbackCodexTransport, stopLocalCodexAppServers } from "@open-tabletop/codex-app-server-provider";
 import {
   aiMemoryFactStatus,
@@ -6792,7 +6792,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return journalPayloadForUser(store, userId, entry);
   });
 
-  app.post<{ Params: { campaignId: string }; Body: { targetType: "handout" | "journal"; targetId: string; expectedUpdatedAt: string; sceneId?: string; pinId?: string; recipientUserIds: string[] } }>("/api/v1/campaigns/:campaignId/presentations", async (request, reply) => {
+  app.post<{ Params: { campaignId: string }; Body: PresentContentRequest }>("/api/v1/campaigns/:campaignId/presentations", async (request, reply) => {
     const { campaignId } = request.params;
     const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "campaign.update");
     if (allowed !== true) return allowed;

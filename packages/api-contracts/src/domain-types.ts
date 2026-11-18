@@ -1627,6 +1627,17 @@ export interface JournalEntry extends Timestamps {
   updatedBy: ID;
 }
 
+export type PresentationTarget = { targetId: ID; expectedUpdatedAt: string } & (
+  | { targetType: "handout"; sceneId?: never; pinId?: never }
+  | { targetType: "handout" | "journal"; sceneId: ID; pinId: ID }
+);
+
+export type PresentContentRequest = PresentationTarget & { recipientUserIds: ID[] };
+
+export interface PresentationReceipt {
+  deliveredUserIds: ID[];
+}
+
 export interface Handout extends Timestamps {
   id: ID;
   campaignId: ID;

@@ -1,11 +1,9 @@
+import { routes, type PresentationTarget, type PresentationReceipt } from "@open-tabletop/api-contracts";
 import type { RealtimePresentation } from "@open-tabletop/core";
 import { useEffect, useRef, useState } from "react";
 import { apiPost, baseUrl, type Snapshot } from "./api.js";
 import { MarkdownDocument } from "./markdown-document.js";
-import type { PinTarget } from "./scene-pin-drag.js";
 import { errorMessage } from "./sheet-format.js";
-
-export type PresentationTarget = PinTarget & { expectedUpdatedAt: string; sceneId?: string; pinId?: string };
 
 export function PresentToPlayers({ campaignId, target, members }: { campaignId: string; target: PresentationTarget; members: Snapshot["members"] }) {
   const [selected, setSelected] = useState<string[]>([]);
@@ -17,7 +15,7 @@ export function PresentToPlayers({ campaignId, target, members }: { campaignId: 
     setBusy(true);
     setStatus("");
     try {
-      const result = await apiPost<{ deliveredUserIds: string[] }>(`/api/v1/campaigns/${campaignId}/presentations`, { ...target, recipientUserIds });
+      const result = await apiPost<PresentationReceipt>(routes.presentations(campaignId), { ...target, recipientUserIds });
       const delivered = result.deliveredUserIds.length;
       setStatus(`Reached ${delivered} of ${recipientUserIds.length} selected players.`);
     } catch (error) {
