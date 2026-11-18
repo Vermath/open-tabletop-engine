@@ -1,3 +1,4 @@
+import { SceneSettingsForm } from "./scene-settings-form.js";
 import type { CharacterClaimOption } from "@open-tabletop/api-contracts";
 import { CharacterClaimPanel, submitCharacterChoice } from "./character-claim-panel.js";
 import { tokenRestorePayload } from "./token-restore.js";
@@ -9715,14 +9716,7 @@ export function App() {
           </details>
         )}
         {selectedScene && hasPermission("scene.update") && (
-          <form
-            className="account-box"
-            aria-label={`Edit scene ${selectedScene.name}`}
-            onSubmit={(event) => {
-              event.preventDefault();
-              saveSceneSettings(event.currentTarget).catch((error) => reportError(error));
-            }}
-          >
+          <SceneSettingsForm sceneName={selectedScene.name} onSave={saveSceneSettings} onError={reportError}>
             <div className="section-title">Scene Manager</div>
             <div className="scene-background-preview">
               {selectedMapAsset ? <img src={assetThumbnailUrl(selectedMapAsset)} alt="" /> : <FileText size={24} />}
@@ -9924,7 +9918,7 @@ export function App() {
                 </button>
               </div>
             )}
-          </form>
+          </SceneSettingsForm>
         )}
         {selectedScene && hasPermission("scene.update") && (
           <SceneDelegationPanel
