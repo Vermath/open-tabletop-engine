@@ -30,4 +30,5 @@
 .hotbar-editor h2 { margin: 0; }
 @media (min-width: 901px) {
   .table-area:has(.personal-hotbar) > .map-layer-dock[data-collapsed="true"] { bottom: 58px; }
+  body:has(.personal-hotbar) .toast-stack { bottom: 122px; }
 }

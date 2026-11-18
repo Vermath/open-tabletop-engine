@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
+import { test } from "./active-scene-fixture.js";
 import type { Handout } from "../../packages/core/src/types.js";
 
 const api = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}`;
@@ -33,8 +34,11 @@ test("drop a journal article on the board, label it, open it and remove it", asy
   await expect(pin).toHaveCount(0);
 });
 
-test("place and move a linked handout, read from the board and revoke it live", async ({ page, browser }) => {
+test("place and move a linked handout, read from the board and revoke it live", async ({ page, browser, activeTestScene }) => {
+  test.setTimeout(75_000);
   await seat(page);
+  await page.locator(".scene-tab").filter({ hasText: activeTestScene.name }).click();
+  await expect(page.getByRole("group", { name: `${activeTestScene.name} interactive battle map` })).toBeVisible();
   const title = `Map clue ${crypto.randomUUID()}`;
   const headers = { authorization: "Bearer otte-cookie-session", origin, "idempotency-key": crypto.randomUUID() };
   const campaign = await page.request.get(`${api}/api/v1/campaigns/camp_demo`, { headers });

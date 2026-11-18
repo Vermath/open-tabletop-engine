@@ -1648,7 +1648,9 @@ export function SceneCanvas(props: ScenePinProps & { readOnly?: boolean; scene: 
       onPointerCancelCapture={(event) => handleViewportPointerEndCapture(event, true)}
       onContextMenu={(event) => event.preventDefault()}
     >
-      {props.onSavePin && <button className="ghost-button scene-pin-tools" type="button" onClick={() => selectPin({ kind: "add" })}>Place map pin</button>}
+      {props.onSavePin && <button className="ghost-button scene-pin-tools" type="button" aria-label="Place map pin" title="Place map pin" onClick={() => selectPin({ kind: "add" })}>
+        <MapPin size={16} aria-hidden="true" /><span>Place map pin</span>
+      </button>}
       {pinSelection && <ScenePinDialog key={props.scene.id} {...props} selection={pinSelection} onClose={() => selectPin(undefined)} />}
       <RetryableActionNotice
         operation={mutationAction.operation}

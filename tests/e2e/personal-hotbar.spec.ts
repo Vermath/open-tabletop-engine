@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
+import { test } from "./active-scene-fixture.js";
 import { selectInspectorPanel } from "./inspector-navigation.js";
 
 const api = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}/api/v1`;
@@ -38,7 +39,7 @@ async function signOut(page: Page) {
   await expect(page.getByRole("heading", { name: "Sign In" })).toBeVisible();
 }
 
-test("a player's numbered slots use sheet and chat rolls and expire when actor control is lost", async ({ page, request }) => {
+test("a player's numbered slots use sheet and chat rolls and expire when actor control is lost", async ({ page, request, activeTestScene }) => {
   test.setTimeout(100_000);
   const created = await request.post(`${api}/campaigns/camp_demo/systems/dnd-5e-srd/characters`, {
     headers: { ...gmHeaders, "idempotency-key": randomUUID() },
@@ -54,10 +55,9 @@ test("a player's numbered slots use sheet and chat rolls and expire when actor c
   expect(monster.ok(), await monster.text()).toBe(true);
   const { actor: enemy } = await monster.json();
   createdActors.push(enemy.id);
-  const scene = (await (await request.get(`${api}/campaigns/camp_demo/scenes`, { headers: gmHeaders })).json() as { id: string; updatedAt: string }[]).find((s) => s.id === "scn_vault_entry")!;
-  const placed = await request.post(`${api}/scenes/${scene.id}/tokens`, {
+  const placed = await request.post(`${api}/scenes/${activeTestScene.id}/tokens`, {
     headers: { ...gmHeaders, "idempotency-key": randomUUID() },
-    data: { name: enemy.name, actorId: enemy.id, expectedUpdatedAt: scene.updatedAt, x: 360, y: 350, width: 50, height: 50, disposition: "hostile", hidden: false, locked: false }
+    data: { name: enemy.name, actorId: enemy.id, expectedUpdatedAt: activeTestScene.updatedAt, x: 360, y: 350, width: 50, height: 50, disposition: "hostile", hidden: false, locked: false }
   });
   expect(placed.ok(), await placed.text()).toBe(true);
   const enemyToken = await placed.json();

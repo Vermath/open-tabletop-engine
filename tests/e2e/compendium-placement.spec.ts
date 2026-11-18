@@ -51,7 +51,9 @@ test("place a compendium monster by keyboard and drag, retry a lost response, an
   expect(second.sceneToken.actorId).toBe(second.actor.id);
   expect([second.sceneToken.x, second.sceneToken.y]).not.toEqual([first.sceneToken.x, first.sceneToken.y]);
 
-  await expect(retry).toHaveCount(0);
+  // The retry button disappears as soon as the request starts. Undo becomes
+  // available once replay reconciliation selects the authoritative token.
+  await expect(board.locator(`[data-token-id="${second.sceneToken.id}"]`)).toHaveAttribute("aria-pressed", "true");
   const undoResponse = page.waitForResponse((r) => r.url().endsWith(second.placementId + "/history") && r.request().method() === "POST");
   await page.keyboard.press("Control+z");
   const undo = await undoResponse;
