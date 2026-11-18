@@ -5120,6 +5120,7 @@ const componentSchemas = {
         enum: ["standard", "player_authoring", "ai_assisted", "assistant_ops"],
       },
       starterContent: { type: "boolean" },
+      starterAdventure: { type: "string", enum: ["ember-vault"] },
     },
   },
   CampaignSnapshotBundled: {
@@ -8373,6 +8374,7 @@ const componentSchemas = {
     properties: {
       expectedUpdatedAt: { type: "string", format: "date-time" },
       sceneId: idSchema,
+      encounterId: idSchema,
       participants: arrayOf(schemaRef("CombatStartParticipantRequest")),
       manualTurnOrder: { type: "boolean" },
     },

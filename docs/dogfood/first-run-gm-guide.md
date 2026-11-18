@@ -19,8 +19,8 @@ On a completely new installation, **Create Owner** asks for **Email**, **Name**,
 If the installation already has accounts, use **Login**, **Register** when available, or your GM invitation. Registering an account does not by itself create a campaign. Verify your name and email under **Manage → Account**. Select an existing campaign from the campaign selector, or create one:
 
 1. Open **Manage → Campaign → New campaign**.
-2. In **Campaign**, enter a name, choose the rules system and visibility, then select **Next: Scene & map**.
-3. Leave **Include starter content** selected for the supplied **First Session** scene and welcome notes. Turn it off to choose your own opening scene and optional advanced settings. Map art and character tokens are added after creation.
+2. In **Campaign**, choose **Blank campaign** or **Play Ember Vault** under **Starting adventure**. Ember Vault uses D&D 5.5e SRD and suggests a name. Set the campaign name and visibility, then select **Next: Scene & map**.
+3. A blank campaign offers **First Session** and welcome notes. Clear **Include starter content** to customize the opening scene. Ember Vault opens on the calibrated **Vault Entry** map with Valen Ash, Mira Vale, three guards, and **The Ember Key** player handout. Run **The Vault Watch** from the Encounter Builder to review initiative and start combat.
 4. In **Invitation**, optionally enable **Create starter invite**, enter the player's email, and select **Player**. You can also use **Skip for now** and invite people later.
 5. Review the settings and choose **Create Campaign Setup**. If setup reports that the campaign already exists but a later step failed, use **Retry Campaign Setup** to finish it, or **Keep campaign as-is** to continue with the existing campaign.
 

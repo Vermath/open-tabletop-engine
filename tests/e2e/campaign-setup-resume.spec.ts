@@ -69,3 +69,63 @@ test("campaign setup survives reload and sign-out without crossing users", async
   await expect(page.getByRole("button", { name: "Live Table", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect.poll(() => page.evaluate(() => Object.values(localStorage).some((value) => value.includes("T12 Resumable Campaign")))).toBe(false);
 });
+
+test("a new GM can replay a lost Ember Vault creation response and open the playable board", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("group", { name: "Account mode" }).getByRole("button", { name: "Register" }).click();
+  await page.getByLabel("Register email").fill(`ember-${Date.now()}@example.test`);
+  await page.getByLabel("Register display name").fill("Starter GM");
+  await page.getByLabel("Register password").fill("ember-starter-test");
+  await page.locator("form").getByRole("button", { name: "Register" }).click();
+
+  const panel = await openCampaignDraft(page);
+  await panel.getByLabel("Campaign name", { exact: true }).fill("My Ember Vault");
+  await expect(panel.getByLabel("Starting adventure")).toHaveValue("blank");
+  await panel.getByLabel("Starting adventure").selectOption("ember-vault");
+  await panel.getByRole("button", { name: "Next: Scene & map" }).click();
+  await expect(panel.getByText(/Vault Entry includes a calibrated map/)).toBeVisible();
+  await panel.getByRole("button", { name: "Next: Invitation" }).click();
+  await panel.getByRole("button", { name: "Skip for now" }).click();
+  await expect(panel.getByLabel("Campaign setup impact")).toContainText("The Ember Key");
+
+  let committedId: string | undefined;
+  await page.route("**/api/v1/campaigns", async (route) => {
+    if (route.request().method() !== "POST" || committedId) return route.continue();
+    const response = await route.fetch();
+    expect(response.ok()).toBe(true);
+    committedId = (await response.json()).id;
+    await route.abort("connectionreset");
+  });
+  const submit = panel.getByRole("button", { name: "Create Campaign Setup" });
+  await submit.click();
+  await expect.poll(() => committedId).toBeTruthy();
+  await expect(submit).toBeEnabled();
+  await submit.click();
+  await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText("My Ember Vault");
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("otte:selectedCampaignId"))).toBe(committedId);
+  await expect(page.getByRole("button", { name: "Live Table", exact: true })).toHaveAttribute("aria-pressed", "true");
+  const board = page.getByRole("group", { name: "Vault Entry interactive battle map", exact: true });
+  await expect(board.locator(".token-image")).toHaveCount(5);
+  await expect.poll(() => board.locator(".scene-map, .token-image").evaluateAll((images: HTMLImageElement[]) =>
+    images.filter((image) => image.complete && image.naturalWidth > 0).length
+  )).toBe(6);
+
+  await page.getByRole("button", { name: "Open command palette" }).click();
+  const palette = page.getByRole("dialog", { name: "Command palette" });
+  await palette.getByLabel("Command palette search").fill("Open Encounter Builder");
+  await palette.getByRole("option", { name: /Open Encounter Builder/ }).click();
+  const builder = page.getByRole("dialog", { name: "Encounter builder" });
+  await builder.getByRole("button", { name: /The Vault Watch/ }).click();
+  await builder.getByRole("button", { name: "Place & review combat" }).click();
+  const review = page.getByRole("dialog", { name: /^Review Vault Entry/ });
+  await review.getByRole("spinbutton", { name: "Valen Ash initiative" }).fill("15");
+  await review.getByRole("spinbutton", { name: "Mira Vale initiative" }).fill("18");
+  await review.getByRole("checkbox", { name: /Server-roll initiative/ }).check();
+  await review.getByRole("button", { name: "Start combat (5)" }).click();
+  await expect(review).toBeHidden();
+  await expect(page.getByRole("status").filter({ hasText: "Combat started with 5 confirmed combatants" })).toBeVisible();
+  for (const name of ["Valen Ash", "Mira Vale", "Cinder Sentry", "Ember Scout", "Ash Elemental"]) {
+    await expect(page.getByRole("button", { name: new RegExp(`^${name}, initiative`) })).toBeVisible();
+  }
+  await expect(board.locator(".token-image")).toHaveCount(5);
+});

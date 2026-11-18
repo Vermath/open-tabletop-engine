@@ -93,7 +93,7 @@ import { systemAdvancementOptionId, systemEncounterThreatId, systemRollId } from
 import type { CharacterCreateInput, CharacterCreatorRulesPreview, CharacterOriginsInfo } from "./character-creator-dialog.js";
 import { CharacterImportDialog, type CharacterImportOutcome } from "./character-import-dialog.js";
 import type { CharacterImportPayload } from "./character-import.js";
-import { EncounterBuilderDialog, encounterMonsterPlacementDrafts, type EncounterBuilderThreatSelection } from "./encounter-builder.js";
+import { EncounterBuilderDialog, encounterMonsterPlacementDrafts, prepareEncounterCombatants, type EncounterBuilderThreatSelection } from "./encounter-builder.js";
 import { CombatSetupDialog } from "./combat-setup-dialog.js";
 import type { CombatSetupSubmission } from "./combat-setup.js";
 import { canonicalSceneIdForWorldFilter, selectedSceneForWorldFilter, WorldAtlasPanel, worldFilterMatchesScene, type LoreCollectionLoadState, type WorldAtlasFilter, type WorldAtlasWorld } from "./world-atlas-panel.js";
@@ -520,6 +520,7 @@ export function App() {
   const [encounterBuilderOpen, setEncounterBuilderOpen] = useState(false);
   const [campaignSearchFocus, setCampaignSearchFocus] = useState<CampaignSearchResult>();
   const [combatSetupOpen, setCombatSetupOpen] = useState(false);
+  const combatSetupEncounterRef = useRef<string | undefined>(undefined);
   const [characterImportOpen, setCharacterImportOpen] = useState(false);
   const [universalVttImportOpen, setUniversalVttImportOpen] = useState(false);
   const [importedActor, setImportedActor] = useState<Actor>();
@@ -563,7 +564,7 @@ export function App() {
   const [canvasAssetSearch, setCanvasAssetSearch] = useState("");
   const [canvasAssetPlacementCount, setCanvasAssetPlacementCount] = useState(1);
   const [campaignSetupForm, setCampaignSetupForm] = useState<Omit<CampaignSetupDraftInput, "idempotencyKeys" | "progress">>(() => defaultCampaignSetupDraft());
-  const { name: newCampaignName, description: newCampaignDescription, systemId: newCampaignSystemId, visibility: newCampaignVisibility, starterContent: setupStarterContent, sceneName: setupSceneName, sceneFolder: setupSceneFolder, sceneWidth: setupSceneWidth, sceneHeight: setupSceneHeight, sceneGridType: setupSceneGridType, sceneGridSize: setupSceneGridSize } = campaignSetupForm;
+  const { name: newCampaignName, description: newCampaignDescription, systemId: newCampaignSystemId, visibility: newCampaignVisibility, starterContent: setupStarterContent, starterAdventure: setupStarterAdventure, sceneName: setupSceneName, sceneFolder: setupSceneFolder, sceneWidth: setupSceneWidth, sceneHeight: setupSceneHeight, sceneGridType: setupSceneGridType, sceneGridSize: setupSceneGridSize } = campaignSetupForm;
   const { inviteEnabled: setupInviteEnabled, inviteEmail: setupInviteEmail, inviteRole: setupInviteRole, permissionTemplate: setupPermissionTemplate, onboardingTitle: setupOnboardingTitle, onboardingBody: setupOnboardingBody, route: campaignSetupRoute } = campaignSetupForm;
   const [isCreatingCampaignSetup, setIsCreatingCampaignSetup] = useState(false);
   const [campaignSetupRecoveryPending, setCampaignSetupRecoveryPending] = useState(false);
@@ -3121,6 +3122,7 @@ export function App() {
       visibility: newCampaignVisibility,
       permissionTemplate: setupPermissionTemplate,
       starterContent: setupStarterContent,
+      ...(setupStarterAdventure ? { starterAdventure: setupStarterAdventure } : {}),
       sceneName,
       sceneFolder: setupSceneFolder.trim(),
       sceneWidth: Math.max(200, setupSceneWidth),
@@ -3150,7 +3152,8 @@ export function App() {
           defaultSystemId: newCampaignSystemId,
           visibility: newCampaignVisibility,
           permissionTemplate: setupPermissionTemplate,
-          starterContent: setupStarterContent
+          starterContent: setupStarterContent,
+          ...(setupStarterAdventure ? { starterAdventure: setupStarterAdventure } : {})
         }, { signal: controller.signal, idempotencyKey: setupIdempotencyKeys.campaign });
         if (!setupRequestIsCurrent()) return;
         progress = { key: progressKey, organizationId: activeOrganizationId, userId: currentUserId, campaign, draftScopeCampaignId: currentCampaignSetupDraftScope()?.campaignId, onboardingCreated: setupStarterContent };
@@ -3246,6 +3249,8 @@ export function App() {
       if (hasSetupInvite) {
         setManageCategory("people");
         setWorkspaceMode("manage");
+      } else if (setupStarterAdventure) {
+        resetWorkspaceNavigation("live", "combat");
       } else {
         resetWorkspaceNavigation("prep", setupStarterContent ? "sessions" : "content");
       }
@@ -3260,8 +3265,8 @@ export function App() {
         ? `${campaign.name} created${createdWith}; invite exists but its one-time link could not be recovered - revoke it and create a new invite${permissionSummary}`
         : setupInvite
           ? `${campaign.name} created${createdWith}; invite link ready to copy${permissionSummary}`
-          : `${campaign.name} created${createdWith}; opened session prep${permissionSummary}`);
-      if (!setupInvite) window.requestAnimationFrame(() => workspaceModeButtonRefs.current[hasSetupInvite ? "manage" : "prep"]?.focus());
+          : `${campaign.name} created${createdWith}; opened ${setupStarterAdventure ? "live table" : "session prep"}${permissionSummary}`);
+      if (!setupInvite) window.requestAnimationFrame(() => workspaceModeButtonRefs.current[hasSetupInvite ? "manage" : setupStarterAdventure ? "live" : "prep"]?.focus());
     } catch (error) {
       if (isAbortError(error)) return;
       throw error;
@@ -6600,6 +6605,7 @@ export function App() {
       return;
     }
     selectInspectorTab("combat");
+    combatSetupEncounterRef.current = undefined;
     setCombatSetupOpen(true);
   }
 
@@ -6627,6 +6633,7 @@ export function App() {
     if (!campaign) throw new Error("Campaign changed while combat setup was open. Review and retry.");
     const combatPayload = {
       sceneId: requestSceneId,
+      ...(combatSetupEncounterRef.current ? { encounterId: combatSetupEncounterRef.current } : {}),
       participants,
       manualTurnOrder: input.manualTurnOrder,
       expectedUpdatedAt: campaign.updatedAt
@@ -8147,12 +8154,20 @@ export function App() {
       const missingNames = missingPartyActorIds.map((actorId) => snapshot.actors.find((actor) => actor.id === actorId)?.name ?? actorId);
       throw new Error(`Place selected party tokens before combat review: ${missingNames.join(", ")}.`);
     }
-    const placedTokens = await createEncounterThreatTokens(encounterId, threats, signal, attemptId);
+    const encounter = snapshot.encounters.find((entry) => entry.id === encounterId);
+    if (!encounter) throw new Error("Reopen the encounter from the current campaign before launching combat.");
+    const request = currentWorkspaceRequestIdentity();
+    const sceneId = selectedScene.id;
+    const stillCurrent = () => !signal.aborted && workspaceIdentityIsCurrent(request) && realtimeSelectionRef.current.sceneId === sceneId;
+    const placedTokens = await prepareEncounterCombatants(encounter.tokenIds, selectedSceneTokens, snapshot.actors, threats,
+      (missing) => createEncounterThreatTokens(encounterId, missing, signal, attemptId), stillCurrent);
+    if (!placedTokens || !stillCurrent()) return;
     if (placedTokens.length === 0) throw new Error("No encounter combatants were placed.");
     const tokenIds = [...new Set([...partyTokens.flatMap((token) => token ? [token.id] : []), ...placedTokens.map((token) => token.id)])];
     selectCanvasTokens(tokenIds);
     setEncounterBuilderOpen(false);
     selectInspectorTab("combat");
+    combatSetupEncounterRef.current = encounterId;
     setCombatSetupOpen(true);
     setStatus(`Prepared ${formatNumber(tokenIds.length)} combatants (${formatNumber(partyTokens.length)} party, ${formatNumber(placedTokens.length)} hostile); review initiative to start.`);
   }

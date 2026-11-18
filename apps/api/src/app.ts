@@ -304,8 +304,8 @@ import { assertDeclarativeSystemRecord, assertDeclarativeSystemStateCandidate, D
 import { advanceDeclarativeBindingRevisions, advanceImportedDeclarativeBindingRevisions, declarativeRuntimeForActor, initialDeclarativeBinding, installedDeclarativeIdentity, isDeclarativeSystem, sameSystemIdentity } from "./declarative-system-host.js";
 import { RealtimeHub, type RealtimeClient } from "./realtime.js";
 import { createRequestLoggerOptions, type RequestLogStream } from "./request-logging.js";
-import { FileStateStore, demoSeedEnabled, type StateStore } from "./store.js";
-import { seedDemoPresentation } from "./demo-presentation.js";
+import { FileStateStore, MemoryStateStore, demoSeedEnabled, type StateStore } from "./store.js";
+import { buildEmberVaultStarter, seedDemoPresentation } from "./demo-presentation.js";
 import { linkEncounterToLiveSession, resolveSingleLiveCampaignSession } from "./encounter-session-link.js";
 import type { AssetSnapshotIdentity, AssetSnapshotProvider, SqliteBackupOptions, SqliteRestoreDrillOptions } from "./sqlite-store.js";
 import { assetMetadataInventoryForAssets } from "./sqlite-store.js";
@@ -639,6 +639,7 @@ type CampaignPermissionTemplateId = "standard" | "player_authoring" | "ai_assist
 interface CampaignCreateBody extends Partial<Campaign> {
   permissionTemplate?: unknown;
   starterContent?: unknown;
+  starterAdventure?: "ember-vault";
 }
 
 type CampaignPatchBody = Partial<Pick<Campaign, "name" | "description" | "defaultSystemId" | "visibility" | "rulesProfile">> & { expectedUpdatedAt?: unknown };
@@ -808,6 +809,7 @@ interface CombatStartParticipantBody {
 
 interface CombatStartBody {
   sceneId?: unknown;
+  encounterId?: string;
   participants?: unknown;
   manualTurnOrder?: unknown;
   expectedUpdatedAt?: unknown;
@@ -3379,7 +3381,41 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (systemBindings) Object.assign(campaign, { systemBindings });
     const member = createTimestamped("mem", { campaignId: campaign.id, userId, role: "owner" as const });
     const starterEvents: EngineEvent[] = [];
-    if (body.starterContent === true) {
+    if (body.starterAdventure === "ember-vault") {
+      if (campaign.defaultSystemId !== DND_5E_SRD_SYSTEM_ID) return badRequest(reply, "Ember Vault requires the D&D 5.5e SRD rules system");
+      const staged = new MemoryStateStore(emptyState());
+      // Keep every attempted write, including originals or renditions whose provider writes then throws.
+      // Request finalization rolls them back with the domain records on failure or disconnect.
+      const attempted: MapAsset[] = [];
+      const transaction: ArchiveAssetRestoreTransaction = {
+        get restoredFiles() { return attempted.length; },
+        commit: async () => {},
+        rollback: async () => {
+          const results = await Promise.allSettled(attempted.map((asset) => assetStorage.delete(asset)));
+          const failures = results.filter((result) => result.status === "rejected");
+          if (failures.length) throw new AggregateError(failures.map((failure) => failure.reason), "Failed to remove staged Ember Vault assets");
+        },
+      };
+      Reflect.set(request, archiveImportAssetRestoreSymbol, transaction);
+      const writer: Pick<AssetStorage, "put"> = {
+        put: async (asset, bytes) => {
+          attempted.push(asset);
+          asset.storage = await assetStorage.put(asset, bytes);
+          return asset.storage;
+        },
+      };
+      const scene = await buildEmberVaultStarter(staged, campaign, (id, name, bytes) => ingestVaultAsset(staged, writer, id, name, bytes, "starter"), createTemplateItems);
+      appendSceneActivationHistory(scene, { activatedAt: scene.createdAt, activatedByUserId: userId, deactivatedSceneIds: [], source: "create" });
+      store.state.assets.push(...staged.state.assets);
+      store.state.scenes.push(scene);
+      store.state.tokens.push(...staged.state.tokens);
+      store.state.actors.push(...staged.state.actors);
+      store.state.items.push(...staged.state.items);
+      migrateDnd5eSrdStoredArmorClassIntent(store.state, { actorIds: staged.state.actors.map((actor) => actor.id), initiatedByUserId: userId });
+      store.state.encounters.push(...staged.state.encounters);
+      store.state.handouts.push(...staged.state.handouts);
+      starterEvents.push(createEvent({ campaignId: campaign.id, type: "scene.created", targetId: scene.id, payload: scene }));
+    } else if (body.starterContent === true) {
       const activatedAt = nowIso();
       const starterScene = createTimestamped("scn", { campaignId: campaign.id, name: "First Session", width: 1200, height: 800, gridType: "square" as const, gridSize: 50, active: true, sortOrder: 1, fog: [], fogHistory: [], walls: [], lights: [], annotations: [], metadata: {} }) satisfies Scene;
       appendSceneActivationHistory(starterScene, { activatedAt, activatedByUserId: userId, deactivatedSceneIds: [], source: "create" });
@@ -7481,6 +7517,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const body = request.body ?? {};
     const sceneId = typeof body.sceneId === "string" ? body.sceneId.trim() : "";
     if (!sceneId) return badRequest(reply, "sceneId is required to start combat");
+    const encounter = body.encounterId ? store.state.encounters.find((entry) => entry.id === body.encounterId && entry.campaignId === campaign.id) : undefined;
+    if (body.encounterId && (!encounter || !canReadEncounter(store, userId, encounter))) return notFound(reply, "Encounter not found in this campaign");
     const scene = store.state.scenes.find((item) => item.id === sceneId && item.campaignId === campaign.id);
     if (!scene) return notFound(reply, "Scene not found in this campaign");
     if (store.state.combats.some((combat) => combat.campaignId === campaign.id && combat.active)) {
@@ -7552,7 +7590,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       combatants.push(applyCombatantRulesAutomation({ id: `cmbt_${token.id}`, tokenId: token.id, ...(token.actorId ? { actorId: token.actorId } : {}), ...(token.hidden ? { hidden: true } : {}), ...(surprised ? { surprised: true } : {}), name: token.name, initiative, defeated: false, readiness: "normal", conditions: token.conditions?.map((condition) => condition.name) ?? [], deathSaveSuccesses: 0, deathSaveFailures: 0, ...(resource ? { resourceKey: resource.key, resourceLabel: resource.label } : {}), resourceUsed: false }));
     }
 
-    const combat = createTimestamped("cmb", { campaignId: campaign.id, active: true, round: 1, turnIndex: 0, manualTurnOrder, combatants: orderedCombatants(combatants, manualTurnOrder) }) satisfies Combat;
+    const combat = createTimestamped("cmb", { campaignId: campaign.id, ...(encounter ? { encounterId: encounter.id } : {}), active: true, round: 1, turnIndex: 0, manualTurnOrder, combatants: orderedCombatants(combatants, manualTurnOrder) }) satisfies Combat;
     store.state.combats.push(combat);
     const campaignRevision = advanceCampaignAggregateRevision(store, combat.campaignId);
     store.state.rolls.push(...rolls);
@@ -13282,20 +13320,26 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     }
   }
 
+  async function ingestVaultAsset(target: StateStore, writer: Pick<AssetStorage, "put">, campaignId: string, sourceName: string, body: Buffer, kind: "demo" | "starter") {
+    const mimeType = "image/webp";
+    if (!body.length || body.length > maxAssetBytes) throw new Error(`Bundled asset is outside the upload size limit: ${sourceName}`);
+    const scan = await scanUploadedAsset(body, mimeType, sourceName, { externalTransport: options.assetScannerTransport });
+    if (scan.blocked) throw new Error(`Bundled asset was blocked by the upload scanner: ${sourceName}`);
+    const checksum = checksumForBuffer(body);
+    const duplicate = reusableUploadedAsset(target, campaignId, checksum, body.length, mimeType);
+    if (duplicate) return duplicate;
+    const persisted = await persistUploadedMapAsset(target, writer, { campaignId, body, mimeType, sourceName, checksum, folder: `${kind}/ember-vault`, tags: [kind], security: scan.security });
+    if (persisted.quotaExceeded) throw Object.assign(new Error(persisted.quotaExceeded.message), { statusCode: 413 });
+    if (kind === "starter" && persisted.renditionWarnings.length) throw new Error(persisted.renditionWarnings[0]!.message);
+    return persisted.asset;
+  }
+
   if (options.seedDemoPresentation && demoSeedEnabled()) {
     try {
-      await seedDemoPresentation(store, async (campaignId, sourceName, body) => {
-        const mimeType = "image/webp";
-        if (body.length === 0 || body.length > maxAssetBytes) throw new Error(`Bundled asset is outside the upload size limit: ${sourceName}`);
-        const scan = await scanUploadedAsset(body, mimeType, sourceName, { externalTransport: options.assetScannerTransport });
-        if (scan.blocked) throw new Error(`Bundled asset was blocked by the upload scanner: ${sourceName}`);
-        const checksum = checksumForBuffer(body);
-        const duplicate = reusableUploadedAsset(store, campaignId, checksum, body.length, mimeType);
-        if (duplicate) return duplicate;
-        const persisted = await persistUploadedMapAsset(store, assetStorage, { campaignId, body, mimeType, sourceName, checksum, folder: "demo/ember-vault", tags: ["demo"], security: scan.security });
-        if (persisted.quotaExceeded) throw new Error(persisted.quotaExceeded.message);
+      await seedDemoPresentation(store, async (id, name, bytes) => {
+        const asset = await ingestVaultAsset(store, assetStorage, id, name, bytes, "demo");
         store.save();
-        return persisted.asset;
+        return asset;
       });
       flushStore(store);
     } catch (error) {
@@ -27696,7 +27740,7 @@ function normalizeAssetMimeType(value: string | string[] | undefined): string {
   return mimeType && mimeType.length > 0 ? mimeType : "application/octet-stream";
 }
 
-async function persistUploadedMapAsset(store: StateStore, storage: AssetStorage, input: {
+async function persistUploadedMapAsset(store: StateStore, storage: Pick<AssetStorage, "put">, input: {
   campaignId: string;
   body: Buffer;
   mimeType: string;
@@ -27724,7 +27768,7 @@ function reusableUploadedAsset(store: StateStore, campaignId: string, checksum: 
   return store.state.assets.find((asset) => asset.campaignId === campaignId && asset.checksum === checksum && asset.sizeBytes === sizeBytes && asset.mimeType === mimeType && asset.lifecycle?.status !== "archived" && asset.lifecycle?.status !== "deleted" && asset.security?.status === "clean" && Boolean(asset.storage) && isAssetDeliverable(asset));
 }
 
-async function storeAssetRenditions(storage: AssetStorage, asset: MapAsset, renditions: BuiltAssetRendition[]): Promise<{ renditions: NonNullable<MapAsset["renditions"]>; warnings: AssetRenditionBuildWarning[] }> {
+async function storeAssetRenditions(storage: Pick<AssetStorage, "put">, asset: MapAsset, renditions: BuiltAssetRendition[]): Promise<{ renditions: NonNullable<MapAsset["renditions"]>; warnings: AssetRenditionBuildWarning[] }> {
   const stored: NonNullable<MapAsset["renditions"]> = [];
   const warnings: AssetRenditionBuildWarning[] = [];
   for (const rendition of renditions) {

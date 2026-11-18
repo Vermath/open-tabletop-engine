@@ -481,6 +481,7 @@ export interface CampaignCreateInput extends Partial<
 > {
   permissionTemplate?: CampaignPermissionTemplateId;
   starterContent?: boolean;
+  starterAdventure?: "ember-vault";
 }
 
 export type CampaignUpdateInput = Partial<
@@ -1209,6 +1210,7 @@ export type ReviewedCombatParticipantInput =
 
 export interface ReviewedCombatStartInput {
   sceneId: string;
+  encounterId?: string;
   participants: ReviewedCombatParticipantInput[];
   manualTurnOrder?: boolean;
 }

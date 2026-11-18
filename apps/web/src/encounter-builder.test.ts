@@ -1,10 +1,10 @@
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Actor, Scene } from "@open-tabletop/core";
+import type { Actor, Scene, Token } from "@open-tabletop/core";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { ENCOUNTER_CATALOG_WINDOW_SIZE, ThreatStepper, encounterCatalogWindow, encounterMonsterPlacementDrafts, encounterPartyEligibility, encounterSearchAnchorId } from "./encounter-builder.js";
+import { ENCOUNTER_CATALOG_WINDOW_SIZE, ThreatStepper, encounterCatalogWindow, encounterMonsterPlacementDrafts, encounterPartyEligibility, encounterSearchAnchorId, prepareEncounterCombatants } from "./encounter-builder.js";
 
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
 const combatPanelSource = readFileSync(resolve(__dirname, "combat-panel.tsx"), "utf8");
@@ -135,5 +135,29 @@ describe("encounter builder", () => {
     expect(last.end).toBe(fullCatalog.length);
     expect(builderSource).toContain("renderedThreats.map");
     expect(builderSource).toContain("data-catalog-window-size={ENCOUNTER_CATALOG_WINDOW_SIZE}");
+  });
+});
+
+
+describe("launching an encounter with previously placed monsters", () => {
+  const threats = [{ id: "animated-armor", name: "Sentry", count: 2 }];
+  const existing = { id: "token-one", actorId: "actor-one", layer: "player", disposition: "hostile" } as Token;
+  const actors = [actor({ id: "actor-one", name: "Sentry", data: { monster: { threatId: "animated-armor" } } })];
+
+  it("discards the roster when the scene changes while the remaining monster is being placed", async () => {
+    let scene = "vault";
+    let finish!: (tokens: Token[]) => void;
+    const result = prepareEncounterCombatants([existing.id], [existing], actors, threats,
+      (missing) => {
+        expect(missing).toMatchObject([{ id: "animated-armor", count: 1 }]);
+        return new Promise((resolve) => { finish = resolve; });
+      }, () => scene === "vault");
+    scene = "another-scene";
+    finish([{ ...existing, id: "token-two" }]);
+    expect(await result).toBeUndefined();
+  });
+
+  it("requires the full roster when placement returns no new monsters", async () => {
+    await expect(prepareEncounterCombatants([existing.id], [existing], actors, threats, async () => [], () => true)).rejects.toThrow("placement was incomplete");
   });
 });
