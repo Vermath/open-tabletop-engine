@@ -54,7 +54,44 @@ export function isPresentation(value: unknown): value is RealtimePresentation {
     && Array.isArray(message.images) && message.images.every((image) => image && typeof image.assetId === "string" && typeof image.name === "string");
 }
 
-export function PresentedContent({ content, onDismiss }: { content: RealtimePresentation; onDismiss(): void }) {
+export function usePlayerPresentation(snapshot: Pick<Snapshot, "members" | "membershipScope">, campaignId: string, userId: string, sessionEpoch: number, connectionKey: string | null) {
+  const [presentation, setPresentation] = useState<{ connectionKey: string; content: RealtimePresentation }>();
+  const sendDismiss = useRef<((id: string) => void) | undefined>(undefined);
+  const access = presentationSeatAccess(snapshot.membershipScope, campaignId, userId, sessionEpoch, snapshot.members);
+  const content = presentation?.connectionKey === connectionKey ? presentation?.content : undefined;
+
+  function dismiss(id: string) {
+    sendDismiss.current?.(id);
+    setPresentation((current) => current?.content.id === id ? undefined : current);
+  }
+  useEffect(() => {
+    if (!content) return;
+    const remaining = content.expiresAt - Date.now();
+    if (access === "denied" || remaining <= 0) { dismiss(content.id); return; }
+    const timer = window.setTimeout(() => dismiss(content.id), remaining);
+    return () => window.clearTimeout(timer);
+  }, [content, access]);
+
+  return {
+    connect(send: (id: string) => void) { sendDismiss.current = send; },
+    disconnect() { sendDismiss.current = undefined; setPresentation(undefined); },
+    receive(message: unknown): boolean {
+      if (message && typeof message === "object" && "channel" in message && message.channel === "presentation.revoked") {
+        if ("campaignId" in message && message.campaignId === campaignId && "id" in message) {
+          setPresentation((current) => current?.content.id === message.id ? undefined : current);
+        }
+        return true;
+      }
+      if (!isPresentation(message)) return false;
+      if (connectionKey && message.campaignId === campaignId && message.expiresAt > Date.now()) setPresentation({ connectionKey, content: message });
+      return true;
+    },
+    dialog: access === "allowed" && content && content.expiresAt > Date.now()
+      ? <PresentedContent content={content} onDismiss={() => dismiss(content.id)} /> : null,
+  };
+}
+
+function PresentedContent({ content, onDismiss }: { content: RealtimePresentation; onDismiss(): void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const element = dialog.current;
