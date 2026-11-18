@@ -264,6 +264,7 @@ export const routes = {
     `/api/v1/journal/${pathPart(entryId)}/history`,
   journalCanonReview: (entryId: string) =>
     `/api/v1/journal/${pathPart(entryId)}/canon-review`,
+  presentations: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/presentations`,
   handouts: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/handouts`,
   handout: (handoutId: string) => `/api/v1/handouts/${pathPart(handoutId)}`,
@@ -915,6 +916,7 @@ const endpointSpecs = [
   ["GET", "/api/v1/journal/{entryId}/backlinks"],
   ["GET", "/api/v1/journal/{entryId}/history"],
   ["POST", "/api/v1/journal/{entryId}/canon-review"],
+  ["POST", "/api/v1/campaigns/{campaignId}/presentations"],
   ["GET", "/api/v1/campaigns/{campaignId}/handouts"],
   ["POST", "/api/v1/campaigns/{campaignId}/handouts"],
   ["GET", "/api/v1/handouts/{handoutId}"],
@@ -15164,6 +15166,7 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
   },
   "GET /api/v1/assets/{assetId}/blob": {
     parameters: [
+      { name: "presentationId", in: "query", required: false, description: "Transient image access scoped to the receiving player's live session and connection.", schema: idSchema },
       {
         name: "userId",
         in: "query",
@@ -17041,6 +17044,14 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       ),
       "409": jsonResponse("Journal entry changed after delete was prepared", schemaRef("StaleWriteConflictResponse")),
     },
+  },
+  "POST /api/v1/campaigns/{campaignId}/presentations": {
+    description: "Show the saved entry to selected online player seats for five minutes. For a linked pin, send its sceneId and pinId alongside the target. Journal entries require a pin. Presentations do not change the saved audience or replay on reconnect.",
+    requestBody: jsonRequestBody({ type: "object", additionalProperties: false, required: ["targetType", "targetId", "expectedUpdatedAt", "recipientUserIds"],
+      properties: { targetType: { type: "string", enum: ["handout", "journal"] }, targetId: idSchema, expectedUpdatedAt: { type: "string", format: "date-time" },
+        sceneId: idSchema, pinId: idSchema, recipientUserIds: { type: "array", minItems: 1, maxItems: 100, uniqueItems: true, items: idSchema } } }),
+    responses: { "200": jsonResponse("Players reached by this live presentation", { type: "object", additionalProperties: false, required: ["deliveredUserIds"], properties: { deliveredUserIds: arrayOf(idSchema) } }),
+      "409": jsonResponse("Content changed before presentation", schemaRef("ErrorResponse")) },
   },
   "GET /api/v1/campaigns/{campaignId}/handouts": {
     responses: {

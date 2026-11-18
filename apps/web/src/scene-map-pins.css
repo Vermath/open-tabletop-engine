@@ -20,4 +20,5 @@
   .scene-pin-tools > span { display: none; }
 }
 .scene-pin-dialog { width: min(28rem, 90vw); max-height: 85vh; overflow: auto; padding: 1rem; border-radius: .6rem; }
+.presented-content img { display: block; max-width: 100%; height: auto; margin-block: .75rem; }
 .scene-pin-dialog::backdrop { background: color-mix(in srgb, var(--color-black) 55%, transparent); }

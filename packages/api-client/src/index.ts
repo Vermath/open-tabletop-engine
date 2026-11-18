@@ -102,6 +102,8 @@ import type {
   FogRegion,
   DifficultTerrainRegion,
   Handout,
+  PresentContentRequest,
+  PresentationReceipt,
   Item,
   JournalBacklink,
   JournalCanonStatus,
@@ -3945,6 +3947,10 @@ export class OpenTabletopClient {
       undefined,
       { "Idempotency-Key": idempotencyKey },
     );
+  }
+
+  async presentContent(campaignId: string, input: PresentContentRequest): Promise<PresentationReceipt> {
+    return this.post(routes.presentations(campaignId), input);
   }
 
   async handouts(campaignId: string): Promise<Handout[]> {

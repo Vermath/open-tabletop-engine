@@ -15,6 +15,7 @@ export function realtimeUiLabel(state: RealtimeUiState): "Ready" | "Connecting" 
 export interface RealtimeOpenContext {
   /** True whenever this socket was created after the connection's first socket attempt. */
   reconnected: boolean;
+  dismissPresentation(id: string): void;
 }
 
 export interface RealtimeConnectionIdentityInput {
@@ -145,7 +146,11 @@ export function startRealtimeConnection(options: StartRealtimeConnectionOptions)
       reconnectAttempt = 0;
       clearHeartbeatTimer();
       sendPresenceHeartbeat();
-      options.onOpen?.({ reconnected });
+      options.onOpen?.({ reconnected, dismissPresentation(id) {
+        if (stopped || socket !== currentSocket || reconnectScheduledForSocket) return;
+        try { currentSocket.send(JSON.stringify({ type: "presentation.dismiss", id })); }
+        catch { scheduleReconnectForCurrentSocket(); currentSocket.close(); }
+      } });
     };
     currentSocket.onmessage = (event) => {
       // Error/close can be followed by queued messages from that transport.

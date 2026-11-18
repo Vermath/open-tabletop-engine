@@ -8,7 +8,7 @@ import { basename, extname, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { aiCitationWarnings, buildPermissionFilteredContext, filterPermissionFilteredContextByScopes, validateAiCitationClaims, type AiBoardCaptureResult, type AiMessage, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiReasoningEffort, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
-import { apiContractPolicy, apiVersion, apiVersionHeader, openApiSpec, type AdminAiThreadSummary, type AdminAiToolCallSummary } from "@open-tabletop/api-contracts";
+import { apiContractPolicy, apiVersion, apiVersionHeader, openApiSpec, type PresentContentRequest, type AdminAiThreadSummary, type AdminAiToolCallSummary } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, CodexAppServerWebSocketTransport, LoopbackCodexTransport, stopLocalCodexAppServers } from "@open-tabletop/codex-app-server-provider";
 import {
   aiMemoryFactStatus,
@@ -304,6 +304,7 @@ import { assertDeclarativeArchiveDependencies, declarativeArchiveSystemRequireme
 import { declarativeSystemManifestChecksum, DeclarativeRuntimeError } from "./declarative-system-runtime.js";
 import { assertDeclarativeSystemRecord, assertDeclarativeSystemStateCandidate, DeclarativeSystemStateError, resolvePinnedDeclarativeSystem } from "./declarative-system-state.js";
 import { advanceDeclarativeBindingRevisions, advanceImportedDeclarativeBindingRevisions, declarativeRuntimeForActor, initialDeclarativeBinding, installedDeclarativeIdentity, isDeclarativeSystem, sameSystemIdentity } from "./declarative-system-host.js";
+import type { RealtimePresentation } from "@open-tabletop/core";
 import { RealtimeHub, type RealtimeClient } from "./realtime.js";
 import { createRequestLoggerOptions, type RequestLogStream } from "./request-logging.js";
 import { FileStateStore, MemoryStateStore, demoSeedEnabled, type StateStore } from "./store.js";
@@ -3331,7 +3332,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const requestedSceneId = url.searchParams.get("sceneId") ?? undefined;
     const activeSceneId = requestedSceneId && store.state.scenes.some((scene) => scene.id === requestedSceneId && scene.campaignId === campaignId && canReadSceneRecord(store, userId, scene)) ? requestedSceneId : undefined;
     const previouslyConnected = hub.countMatching({ campaignId, userId }) > 0;
-    const client: RealtimeClient = { campaignId, userId, sessionId: session?.id, connectedAt, lastSeenAt: connectedAt, activeSceneId, send: (data: string) => socket.send(data), close: () => socket.close() };
+    const client: RealtimeClient = { campaignId, userId, sessionId: session?.id, connectedAt, lastSeenAt: connectedAt, activeSceneId, isOpen: () => socket.readyState === socket.OPEN, send: (data: string) => socket.send(data), close: () => socket.close() };
     hub.add(client);
     socket.send(JSON.stringify({ channel: "presence", type: "presence.snapshot", campaignId, timestamp: connectedAt, presences: campaignPresence(campaignId) } satisfies RealtimePresenceEnvelope));
     const joinedPresence = presenceForUser(campaignId, userId)!;
@@ -3343,7 +3344,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       } catch {
         return;
       }
-      if (!isRecord(message) || message.type !== "presence.heartbeat") return;
+      if (!isRecord(message)) return;
+      if (message.type === "presentation.dismiss" && client.presentation?.id === message.id) {
+        delete client.presentation;
+        return;
+      }
+      if (message.type !== "presence.heartbeat") return;
       if (!realtimeClientAuthorizationIsCurrent(store, client)) {
         if (client.sessionId) disconnectRealtimeSession(client.sessionId);
         else removeRealtimeClient(client);
@@ -4460,7 +4466,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     return asset;
   });
 
-  app.get<{ Params: { assetId: string }; Querystring: { userId?: string; sessionToken?: string; expiresAt?: string; signature?: string; disposition?: "inline" | "attachment"; variant?: "thumbnail" | "optimized" } }>("/api/v1/assets/:assetId/blob", async (request, reply) => {
+  app.get<{ Params: { assetId: string }; Querystring: { userId?: string; sessionToken?: string; expiresAt?: string; signature?: string; presentationId?: string; disposition?: "inline" | "attachment"; variant?: "thumbnail" | "optimized" } }>("/api/v1/assets/:assetId/blob", async (request, reply) => {
     const asset = store.state.assets.find((item) => item.id === request.params.assetId);
     if (!asset) return notFound(reply, "Asset not found");
     const accessMode = request.query.signature ? "signed" : "session";
@@ -4480,12 +4486,21 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
         appendAssetDeliveryAuditLog(store, asset, { status: "denied", accessMode, reason: "missing_permission_or_active_organization" });
         return allowed;
       }
-      if (!canReadAssetRecord(store, userId, asset)) {
+      const presentationId = request.query.presentationId;
+      const sessionId = presentationId ? sessionFromRequest(store, request.url, request.headers)?.id : undefined;
+      const canView = presentationId ? hub.clientsMatching({ campaignId: asset.campaignId, userId }).some((client) => {
+        const grant = client.presentation;
+        return grant?.id === presentationId && client.sessionId === sessionId && client.isOpen?.() && realtimeClientAuthorizationIsCurrent(store, client)
+          && grant.expiresAt > Date.now() && grant.assetIds.has(asset.id) && isPresentationImage(asset)
+          && store.state.members.some((member) => member.campaignId === asset.campaignId && member.userId === userId && member.role === "player")
+          && store.state.handouts.some((item) => item.id === grant.handoutId && item.campaignId === asset.campaignId && item.assetIds.includes(asset.id));
+      }) : canReadAssetRecord(store, userId, asset);
+      if (!canView) {
         appendAssetDeliveryAuditLog(store, asset, { status: "denied", accessMode, reason: "asset_not_visible" });
         return notFound(reply, "Asset not found");
       }
     }
-    const cacheControl = signedAccess ? signedAssetCacheControl(request.query.expiresAt) : "private, max-age=60";
+    const cacheControl = request.query.presentationId ? "private, no-store" : signedAccess ? signedAssetCacheControl(request.query.expiresAt) : "private, max-age=60";
     const contentDisposition = request.query.disposition === "attachment" ? `attachment; filename="${safeDownloadFileName(asset.name)}"` : undefined;
     const requestedRendition = request.query.variant ? asset.renditions?.find((rendition) => rendition.kind === request.query.variant) : undefined;
     let deliveryAsset = requestedRendition ? assetRecordForRendition(asset, requestedRendition) : asset;
@@ -6896,6 +6911,47 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     for (const scene of pinScenes) broadcast(createEvent({ campaignId: scene.campaignId, type: "scene.updated", targetId: scene.id, payload: scene }));
     broadcast(createEvent({ campaignId: entry.campaignId, type: "journal.deleted", actorUserId: userId, targetId: entry.id, payload: entry }));
     return journalPayloadForUser(store, userId, entry);
+  });
+
+  app.post<{ Params: { campaignId: string }; Body: PresentContentRequest }>("/api/v1/campaigns/:campaignId/presentations", async (request, reply) => {
+    const { campaignId } = request.params;
+    const allowed = requireCampaignPermission(store, reply, request.headers, campaignId, "campaign.update");
+    if (allowed !== true) return allowed;
+    const userId = currentUserId(store, request.headers)!;
+    const body = request.body;
+    if (!body || !["journal", "handout"].includes(body.targetType) || !Array.isArray(body.recipientUserIds)
+      || !body.recipientUserIds.length || body.recipientUserIds.length > 100) return badRequest(reply, "Choose 1 to 100 player seats");
+    if (!canCampaign(store, userId, campaignId, body.targetType === "journal" ? "journal.update" : "handout.update")) return forbidden(reply, "Cannot present this content");
+    const recipientIds = new Set(body.recipientUserIds);
+    if ([...recipientIds].some((id) => !store.state.members.some((member) => member.userId === id && member.campaignId === campaignId && member.role === "player") || !isActiveUserId(store, id))) {
+      return badRequest(reply, "Choose current campaign players");
+    }
+    if (body.targetType === "journal" || body.pinId !== undefined || body.sceneId !== undefined) {
+      const scene = store.state.scenes.find((item) => item.campaignId === campaignId && item.id === body.sceneId);
+      if (!scene || !canReadSceneRecord(store, userId, scene) || !scenePayloadForUser(store, userId, scene).mapPins?.some((pin) =>
+        pin.id === body.pinId && pin.targetType === body.targetType && pin.targetId === body.targetId)) return notFound(reply, "Map pin is unavailable");
+    }
+    const handout = body.targetType === "handout" ? store.state.handouts.find((item) => item.campaignId === campaignId && item.id === body.targetId && canReadHandout(store, userId, item)) : undefined;
+    const entry = handout ?? (body.targetType === "journal" ? store.state.journals.find((item) => item.campaignId === campaignId && item.id === body.targetId && item.kind !== "folder" && canReadJournalEntry(store, userId, item)) : undefined);
+    if (!entry) return notFound(reply, "Content is unavailable");
+    if (entry.updatedAt !== body.expectedUpdatedAt) return reply.code(409).send({ error: "stale_write", message: "Content changed. Reopen it before showing it to players." });
+    const images = handout ? store.state.assets.filter((asset) => asset.campaignId === campaignId && handout.assetIds.includes(asset.id)
+      && isPresentationImage(asset) && canReadAssetRecord(store, userId, asset)).map(({ id: assetId, name }) => ({ assetId, name })) : [];
+    const delivered = new Set<string>();
+    const expiresAt = Date.now() + 5 * 60_000;
+    for (const client of hub.clientsMatching({ campaignId })) {
+      if (!client.userId || !recipientIds.has(client.userId) || !client.isOpen?.() || !realtimeClientAuthorizationIsCurrent(store, client)) continue;
+      const id = randomBytes(24).toString("base64url");
+      const envelope: RealtimePresentation = { channel: "presentation", campaignId, id, expiresAt, title: entry.title, body: entry.body, images };
+      try {
+        client.send(JSON.stringify(envelope));
+        client.presentation = handout && images.length ? { id, expiresAt, handoutId: handout.id, assetIds: new Set(images.map((image) => image.assetId)) } : undefined;
+        delivered.add(client.userId);
+      } catch {
+        hub.remove(client);
+      }
+    }
+    return { deliveredUserIds: [...delivered] };
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/handouts", async (request, reply) => {
@@ -24901,6 +24957,10 @@ function readableAssetIdsForUser(store: StateStore, userId: string, campaignId: 
 function managedAudioAssetId(url: string): string | undefined {
   const match = /^\/api\/v1\/assets\/([^/?#]+)\/blob(?:[?#].*)?$/.exec(url);
   return match?.[1] ? decodePathPart(match[1]) : undefined;
+}
+
+function isPresentationImage(asset: MapAsset): boolean {
+  return Boolean(asset.storage) && /^image\/(png|jpeg|gif|webp|avif)$/i.test(asset.mimeType) && isAssetDeliverable(asset);
 }
 
 function canReadAssetRecord(store: StateStore, userId: string, asset: MapAsset): boolean {

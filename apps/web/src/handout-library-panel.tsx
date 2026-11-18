@@ -1,3 +1,4 @@
+import { PresentToPlayers } from "./presentation.js";
 import { writePinDrag } from "./scene-pin-drag.js";
 import { EmptyState } from "./workspace-states.js";
 import type { Actor, MapAsset, Visibility } from "@open-tabletop/core";
@@ -138,6 +139,7 @@ export function HandoutLibraryPanel(props: {
   canCreate: boolean;
   canUpdate: boolean;
   canDelete: boolean;
+  canPresent?: boolean;
   loadState?: LoreCollectionLoadState;
   loadError?: string;
   onRetryLoad?(): void;
@@ -315,6 +317,8 @@ export function HandoutLibraryPanel(props: {
               onCancel={() => { setCreating(false); setSelectedId(""); setDeleteArmed(false); }}
             />
 
+            {selected && props.canPresent && <PresentToPlayers key={selected.id} campaignId={props.campaignId} members={props.members}
+              target={{ targetType: "handout", targetId: selected.id, expectedUpdatedAt: selected.updatedAt }} />}
             {selected && props.canDelete && (
               <div className="handout-danger-row">
                 {deleteArmed ? (

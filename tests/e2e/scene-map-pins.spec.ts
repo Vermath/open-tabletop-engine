@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { selectInspectorPanel } from "./inspector-navigation.js";
 import { expect, type Page } from "@playwright/test";
 import { test } from "./active-scene-fixture.js";
 import type { Handout } from "../../packages/core/src/types.js";
@@ -80,6 +82,74 @@ test("place and move a linked handout, read from the board and revoke it live", 
     await context.close();
     const latest = await page.request.get(`${api}/api/v1/handouts/${handout.id}`, { headers });
     const removed = await page.request.delete(`${api}/api/v1/handouts/${handout.id}?expectedUpdatedAt=${encodeURIComponent((await latest.json()).updatedAt)}`, { headers: { ...headers, "idempotency-key": crypto.randomUUID() } });
+    expect(removed.ok(), await removed.text()).toBe(true);
+  }
+});
+
+test("presents a private illustrated handout and journal pin while the player stays on the map", async ({ page, browser, activeTestScene }) => {
+  test.setTimeout(90_000);
+  await seat(page);
+  await page.locator(".scene-tab").filter({ hasText: activeTestScene.name }).click();
+  const campaign = api + "/api/v1/campaigns/camp_demo";
+  const headers = () => ({ authorization: "Bearer otte-cookie-session", origin, "idempotency-key": crypto.randomUUID() });
+  const upload = await page.request.post(campaign + "/assets/upload", {
+    headers: { ...headers(), "content-type": "image/png", "x-asset-name": "private-letter.png" }, data: readFileSync("tests/e2e/fixtures/offset-grid.png"),
+  });
+  expect(upload.ok(), await upload.text()).toBe(true);
+  const { asset } = await upload.json();
+  const revision = await page.request.get(campaign, { headers: headers() });
+  const created = await page.request.post(campaign + "/handouts", { headers: headers(), data: {
+    title: `Sealed letter ${crypto.randomUUID()}`, body: "The seal bears a silver wren.", visibility: "gm_only", assetIds: [asset.id], expectedUpdatedAt: (await revision.json()).updatedAt,
+  } });
+  expect(created.ok(), await created.text()).toBe(true);
+  const handout = await created.json() as Handout;
+  const context = await browser.newContext({ baseURL: origin, extraHTTPHeaders: { Origin: origin } });
+  try {
+    const player = await context.newPage();
+    await seat(player, true);
+    const chat = await selectInspectorPanel(player, "Chat");
+    const playerBoard = player.getByRole("group", { name: `${activeTestScene.name} interactive battle map` });
+    await expect(playerBoard).toBeVisible();
+    const beforeUrl = player.url();
+    await selectInspectorPanel(page, "Handouts");
+    await page.getByRole("button", { name: new RegExp(handout.title) }).click();
+    await page.getByText("Show to players", { exact: true }).click();
+    await page.getByRole("checkbox", { name: "Demo Player" }).check();
+    await page.getByRole("button", { name: "Show selected players" }).click();
+    const modal = player.getByRole("dialog", { name: "Shared by the GM" });
+    await expect(modal.getByRole("heading", { name: handout.title })).toBeVisible();
+    await expect(modal).toContainText(handout.body);
+    const image = modal.getByRole("img", { name: asset.name });
+    await expect.poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    const imageUrl = (await image.getAttribute("src"))!;
+    await modal.getByRole("button", { name: "Dismiss" }).click();
+    await expect(modal).toHaveCount(0);
+    await expect(chat).toHaveAttribute("aria-selected", "true");
+    await expect(playerBoard).toBeVisible();
+    expect(player.url()).toBe(beforeUrl);
+    await expect.poll(async () => (await player.request.get(imageUrl, { headers: headers() })).status()).toBe(404);
+    const persisted = await page.request.get(`${api}/api/v1/handouts/${handout.id}`, { headers: headers() });
+    expect(await persisted.json()).toMatchObject({ visibility: "gm_only", visibleToUserIds: [], visibleToActorIds: [] });
+
+    await page.getByRole("button", { name: "Place map pin" }).click();
+    const editor = page.getByRole("dialog", { name: "Edit map pin" });
+    await editor.getByRole("combobox", { name: "Linked entry", exact: true }).selectOption(JSON.stringify(["journal", "jnl_hook"]));
+    await editor.getByLabel("Pin label").fill("GM key");
+    await editor.getByRole("button", { name: "Save pin" }).click();
+    await page.getByRole("button", { name: "Open map pin GM key" }).click();
+    const pinDialog = page.getByRole("dialog", { name: "Linked entry" });
+    await pinDialog.getByText("Show to players", { exact: true }).click();
+    await pinDialog.getByRole("checkbox", { name: "Demo Player" }).check();
+    await pinDialog.getByRole("button", { name: "Show selected players" }).click();
+    await expect(modal).toContainText("both braziers");
+    await expect(player.getByRole("button", { name: "Open map pin GM key" })).toHaveCount(0);
+    await player.reload();
+    await expect(playerBoard).toBeVisible();
+    await expect(modal).toHaveCount(0);
+    await expect(player.getByText("both braziers", { exact: false })).toHaveCount(0);
+  } finally {
+    await context.close();
+    const removed = await page.request.delete(`${api}/api/v1/handouts/${handout.id}?expectedUpdatedAt=${encodeURIComponent(handout.updatedAt)}`, { headers: headers() });
     expect(removed.ok(), await removed.text()).toBe(true);
   }
 });

@@ -73,6 +73,7 @@ function excludedAiRoute(path: string): boolean {
 }
 
 const EXEMPTIONS: readonly ExemptionRule[] = [
+  { pattern: /^\/api\/v1\/campaigns\/:[^/]+\/presentations$/, reason: "connection-local presentation with no saved campaign mutation or replay" },
   { pattern: /^\/api\/v1\/mcp$/, reason: "MCP transport; invoked domain tools own their mutation contracts" },
   { pattern: /^\/api\/v1\/auth\//, reason: "caller identity/session lifecycle, not campaign shared state" },
   { pattern: /^\/api\/v1\/organization\/session$/, reason: "caller-local active-workspace selection" },
@@ -286,9 +287,9 @@ describe("non-AI mutation route contract", () => {
   const centralDescriptors = extractCentralGuardDescriptors(appSource);
 
   it("keeps the current mutation inventory explicit and classified", () => {
-    expect(routes).toHaveLength(261);
+    expect(routes).toHaveLength(262);
     expect(routes.filter((route) => route.sourceName === "party-roll-routes.ts")).toHaveLength(2);
-    expect(routes.filter((route) => route.sourceName === "app.ts")).toHaveLength(214);
+    expect(routes.filter((route) => route.sourceName === "app.ts")).toHaveLength(215);
     expect(routes.filter((route) => route.sourceName === "calculation-override-routes.ts")).toHaveLength(2);
     expect(routes.filter((route) => route.sourceName === "archive-operations.ts")).toHaveLength(0);
     expect(routes.filter((route) => route.sourceName === "asset-operations.ts")).toHaveLength(0);
