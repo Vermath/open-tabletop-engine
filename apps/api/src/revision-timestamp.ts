@@ -1,5 +1,8 @@
-export function nextRevisionTimestamp(current: string): string {
-  const now = Date.now();
-  const currentTime = Date.parse(current);
-  return new Date(Number.isFinite(currentTime) && currentTime >= now ? currentTime + 1 : now).toISOString();
+export function nextRevisionTimestamp(current: string, ...otherRevisions: string[]): string {
+  let next = Date.now();
+  for (const revision of [current, ...otherRevisions]) {
+    const time = Date.parse(revision);
+    if (time >= next) next = time + 1;
+  }
+  return new Date(next).toISOString();
 }

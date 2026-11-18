@@ -3523,8 +3523,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (typeof reason === "string" && reason.length > 160) return badRequest(reply, "reason must be 160 characters or fewer");
 
     const previousTargetRole = newOwnerMember.role;
-    const latestRevision = [campaign.updatedAt, previousOwnerMember.updatedAt, newOwnerMember.updatedAt].sort().at(-1)!;
-    const updatedAt = nextRevisionTimestamp(latestRevision);
+    const updatedAt = nextRevisionTimestamp(campaign.updatedAt, previousOwnerMember.updatedAt, newOwnerMember.updatedAt);
     campaign.ownerUserId = targetUserId;
     campaign.updatedAt = updatedAt;
     previousOwnerMember.role = "gm";
