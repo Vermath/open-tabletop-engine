@@ -1,0 +1,33 @@
+.map-play-surface:has(> .personal-hotbar) {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+.personal-hotbar {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  min-width: 0;
+  padding: 4px;
+  overflow-x: auto;
+  border-top: 1px solid var(--glass-border);
+  background: var(--surface-0);
+}
+.personal-hotbar > button {
+  flex: 0 0 auto;
+  display: inline-flex;
+  gap: 5px;
+  align-items: center;
+  max-width: 12em;
+  min-height: 32px;
+}
+.personal-hotbar > button > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.personal-hotbar kbd { color: var(--muted); }
+.hotbar-editor > label { display: grid; gap: 4px; }
+.hotbar-editor .operator-heading { justify-content: space-between; }
+.hotbar-editor h2 { margin: 0; }
+@media (min-width: 901px) {
+  .table-area:has(.personal-hotbar) > .map-layer-dock[data-collapsed="true"] { bottom: 58px; }
+}

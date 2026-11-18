@@ -6,7 +6,7 @@ import { applySceneVision } from "./player-scene-visibility.js";
 import type { Actor, AiMemoryFact, AiThread, AiToolCall, AudioTrack, AuditLog, Campaign, ChatMessage, Combat, CombatAction, CombatLegendaryActionPrompt, ContentImportBatch, ContentImportEntityKind, ContentImportSource, DiceRoll, EmailOutboxMessage, Encounter, EncounterMonsterPlacementBatchInput, EncounterMonsterPlacementBatchResult, FogHistoryEntry, FogMode, FogPreset, GridType, Item, JournalCanonStatus, JournalEntry, MapAsset, MessageType, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SceneAnnotation, SceneAnnotationKind, SceneAnnotationLayer, SceneDuplicationPlan, SceneDuplicationRequest, SceneDuplicationResult, SceneTemplateShape, ScimAssignableRole, Token, TokenLayer, User, UserRole, Visibility, VisionPoint, VisionPointSample, VisionPolygon } from "@open-tabletop/core";
 import type { Dnd5eSrdCombatantSyncMutationResult, Dnd5eSrdCombatVitalsKind, Dnd5eSrdCombatVitalsMutationResult, Dnd5eSrdPendingAdvancement, Dnd5eSrdSpellPreparationMutationResult, DndControlledCreatureActionHandoff, DndRulesMutationUndoDescriptor, DndRulesMutationUndoResult } from "@open-tabletop/core";
 import type { TokenMoveBatchRequest, TokenMoveBatchResult } from "@open-tabletop/core";
-import { probabilityRange, rollFormula } from "@open-tabletop/dice-engine";
+import { probabilityRange } from "@open-tabletop/dice-engine";
 import { Activity, BookOpen, Bot, Boxes, Brain, BrickWall, Check, ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Circle, Copy, Crosshair, Dices, Download, Eraser, Eye, FileText, Flame, Globe2, Grip, Hand, Image as ImageIcon, KeyRound, Layers, Lightbulb, LockKeyhole, Mail, Map as MapIcon, MapPin, Maximize2, MessageSquare, Minimize2, Moon, Music, Paintbrush, PencilLine, Pentagon, Play, Plus, RefreshCw, RotateCcw, Ruler, ScrollText, Search, Send, Shield, Swords, Timer, Trash2, Triangle, Upload, UserCog, UserPlus, Users, UserX, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import type { CSSProperties, DragEvent as ReactDragEvent, KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { startTransition, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -20,7 +20,7 @@ import { assetThumbnailUrl } from "./api.js";
 import { activeSceneAnnotations } from "./annotation-expiry.js";
 import { applyActiveSceneIdentity, applyAuthoritativeScene } from "./active-scene-state.js";
 import { applyLocalBoardHistoryAction, boardHistoryStatus, createTokenCopies, type BoardHistoryAction, type BoardHistoryDirection, type BoardTokenFrameChange } from "./board-history.js";
-import { blankCanvasDemoCampaignId, blankCanvasDemoNotice, blankCanvasDemoSceneId, blankCanvasDemoUserId, createBlankCanvasDemoAsset, createBlankCanvasDemoSnapshot, seededDemoLoginErrorMessage, seededDemoUnavailableMessage } from "./blank-canvas-demo.js";
+import { blankCanvasTableRoll, blankCanvasChatMessage, blankCanvasDemoCampaignId, blankCanvasDemoNotice, blankCanvasDemoSceneId, blankCanvasDemoUserId, createBlankCanvasDemoAsset, createBlankCanvasDemoSnapshot, seededDemoLoginErrorMessage, seededDemoUnavailableMessage } from "./blank-canvas-demo.js";
 import { scenePointFromClient } from "./board-geometry.js";
 import { boardKeyboardAction } from "./board-keyboard.js";
 import { boundedBoardCapturePixelRatio } from "./board-capture.js";
@@ -74,6 +74,9 @@ import { cleanupAdminStoredAssets, migrateAdminStoredAssets, purgeAdminAssetCdnC
 import { failStaleAdminAiThreads, failStaleAdminAiToolCalls, rejectStaleAdminAiProposals, retryAdminAiToolCall as requestRetryAdminAiToolCall } from "./admin-ai-client.js";
 import { issueAdminPasswordReset as requestAdminPasswordReset, pruneExpiredPasswordResets as requestPruneExpiredPasswordResets, retryAdminEmail as requestRetryAdminEmail, retryAllAdminEmails as requestRetryAllAdminEmails, revokeAdminRiskSessions as requestRevokeAdminRiskSessions, revokeAdminSession as requestRevokeAdminSession, revokeAdminUserSessions as requestRevokeAdminUserSessions, updateAdminUser } from "./admin-identity-client.js";
 import { syncAdminPluginRegistry, syncCampaignPluginRegistry, updateAdminPluginReview } from "./admin-plugin-client.js";
+import { PersonalHotbar } from "./personal-hotbar.js";
+import { hotbarStoragePrefix } from "./personal-hotbar-state.js";
+import { prepareDeclarativeRoll, rollDeclarativeActor } from "./declarative-system-client.js";
 import { LiveMapLayerStack, LiveSceneCanvas } from "./live-scene-canvas.js";
 import { MapSelectionStatus, MapZoomControls, Toolbar, annotationColor, annotationGroupKey, annotationToolLabel, annotationToolShowsSettings, battleMapZoomStep, clampBattleMapZoom, defaultAnnotationLayer, distanceBetween, isUsableImageAsset, nextTokenLayer, sceneGridOverlayVisible, tokenCenter, tokenCoordinatesFromCenter, tokenFrame, tokenLayer, tokenLayerLabel, tokenLayers, useAnnotationExpiryClock, type TokenFrame, type TokenMovePersistenceChange, type TokenSelectionOptions } from "./scene-canvas.js";
 import { campaignPermissionTemplates, type CampaignPermissionTemplateId } from "./admin-data.js";
@@ -6028,38 +6031,11 @@ export function App() {
   }
 
   function createBlankCanvasDemoRoll(formula: string, visibility: DiceRoll["visibility"], label: string): DiceRoll {
-    const timestamp = new Date().toISOString();
-    const result = rollFormula(formula);
-    return {
-      id: nextBlankCanvasDemoId("roll_demo"),
-      campaignId,
-      userId: currentUserId,
-      formula,
-      label,
-      visibility,
-      terms: result.terms,
-      total: result.total,
-      createdAt: timestamp,
-      updatedAt: timestamp
-    };
+    return blankCanvasTableRoll({ id: nextBlankCanvasDemoId("roll_demo"), campaignId, userId: currentUserId }, formula, visibility, label);
   }
 
-  function createBlankCanvasDemoChatMessage(input: Pick<ChatMessage, "body" | "type" | "visibility" | "recipientUserIds"> & { rollId?: string; replyToMessageId?: string }): ChatMessage {
-    const timestamp = new Date().toISOString();
-    return {
-      id: nextBlankCanvasDemoId("chat_demo"),
-      campaignId,
-      sceneId: selectedScene?.id,
-      userId: currentUserId,
-      body: input.body,
-      type: input.type,
-      visibility: input.visibility,
-      recipientUserIds: input.recipientUserIds,
-      rollId: input.rollId,
-      replyToMessageId: input.replyToMessageId,
-      createdAt: timestamp,
-      updatedAt: timestamp
-    };
+  function createBlankCanvasDemoChatMessage(input: Parameters<typeof blankCanvasChatMessage>[1]): ChatMessage {
+    return blankCanvasChatMessage({ id: nextBlankCanvasDemoId("chat_demo"), campaignId, sceneId: selectedScene?.id, userId: currentUserId }, input);
   }
 
   function shouldDelayDiceResult(roll: DiceRoll): boolean {
@@ -6129,14 +6105,13 @@ export function App() {
       setRollStatusAfterDiceReveal(roll, `Rolled ${roll.total} for this demo tab`);
       return;
     }
-    const roll = await postDiceRoll("table", {
-      campaignId,
-      formula,
-      visibility: diceVisibility,
-      label: "Table roll"
-    });
-    setRollStatusAfterDiceReveal(roll, `Rolled ${roll.total}`);
-    await refresh(campaignId, sceneId, { syncStatus: false });
+    await runWorkspaceBoundAction(
+      (request) => postDiceRoll("table", { campaignId: request.campaignId, formula, visibility: diceVisibility, label: "Table roll" }, request.controller.signal),
+      async (roll, request) => {
+        setRollStatusAfterDiceReveal(roll, `Rolled ${roll.total}`);
+        await refresh(request.campaignId, realtimeSelectionRef.current.sceneId, { syncStatus: false });
+      }
+    );
   }
 
   async function rollTemplateDamage(annotation: SceneAnnotation) {
@@ -7686,9 +7661,8 @@ export function App() {
       }
     );
   }
-  async function useActorAction(rollId: string, options: ActorActionCommitOptions = {}) {
-    if (!selectedActor) return;
-    const actor = selectedActor;
+  async function useActorAction(rollId: string, options: ActorActionCommitOptions = {}, actor = selectedActor) {
+    if (!actor) return;
     const consumeResources = options.consumeResources ?? true;
     const initiallyConsequentialDndAction = actor.systemId === "dnd-5e-srd" && Boolean(consumeResources || options.applyEffect || options.weaponMastery?.use);
     const actionRequest = actorActionRequest(rollId, actor.updatedAt, { ...options, consumeResources }, diceVisibility);
@@ -10339,6 +10313,12 @@ export function App() {
                   </>}
                 </div>
               )}
+              {workspaceMode === "live" && !sceneWorkspaceHidden && !playerPreview.open && !blankCanvasDemoOpen && selectedScene?.campaignId === campaignId && currentMember?.campaignId === campaignId && snapshot.session?.user.id === currentUserId &&
+                <PersonalHotbar key={hotbarStoragePrefix(apiBase, currentUserId, campaignId)} storagePrefix={hotbarStoragePrefix(apiBase, currentUserId, campaignId)} campaignId={campaignId} userId={currentUserId}
+                  actors={snapshot.actors} selectedActorId={selectedActor?.id} sceneId={selectedScene.id} tokens={snapshot.tokens} selectedTokenId={selectedToken?.id} items={snapshot.items} permissions={currentMember.permissions} savedFormulas={savedDiceFormulas} macros={snapshot.diceMacros}
+                  onDiceRoll={rollDice} onActorRoll={useActorAction} onError={reportError} onDeclarativeRoll={(sheet, rollId) => runWorkspaceBoundAction(
+                    (request) => rollDeclarativeActor(prepareDeclarativeRoll(request.campaignId, sheet, rollId, crypto.randomUUID()), request.controller.signal),
+                    (result) => { applyActorToSnapshot(result.actor); setStatus(`${result.quickRoll.label}: ${result.roll.total}`); })} />}
             </div>
             {gridCalibrationOpen && selectedScene && selectedScene.gridType !== "gridless" && (
               <GridCalibrationPanel
