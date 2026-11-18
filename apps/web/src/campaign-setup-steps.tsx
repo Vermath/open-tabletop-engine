@@ -103,7 +103,7 @@ export function CampaignSetupSteps(props: CampaignSetupStepsProps) {
         {draft.route.step === "scene" && (
           <section className="campaign-setup-step" aria-labelledby="campaign-setup-scene-heading">
             <h3 id="campaign-setup-scene-heading">Prepare the first scene</h3>
-            {emberVault ? <p className="account-summary">Vault Entry includes a calibrated map, Valen Ash and Mira Vale, and three guards. The Ember Key handout introduces the party’s objective.</p> : <>
+            {emberVault ? <p className="account-summary">Vault Entry includes a calibrated map, Valen Ash and Mira Vale, and three guards. The Ember Key handout introduces the party's objective.</p> : <>
             <p className="account-summary">Starter content creates a playable scene and welcome notes. Maps, tokens, and encounters remain optional preparation.</p>
             <label className="inline-check"><input aria-label="Include starter content" type="checkbox" checked={draft.starterContent} onChange={(event) => update({ starterContent: event.target.checked })} /><span>Include starter content</span></label>
             {draft.starterContent && <p className="account-summary">Starter content supplies the First Session scene and welcome notes. Turn it off to customize these fields.</p>}
