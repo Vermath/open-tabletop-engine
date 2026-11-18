@@ -11446,6 +11446,31 @@ describe("api", () => {
     }
   });
 
+  it("caps scene walls and lights at the editable scene ceiling", async () => {
+    const store = new MemoryStateStore();
+    const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    scene.walls = Array.from({ length: 10_000 }, (_, index) => ({ id: `wall_cap_${index}`, x1: index % 100, y1: 0, x2: index % 100, y2: 10, blocksVision: true, blocksMovement: true, kind: "wall" as const }));
+    scene.lights = Array.from({ length: 5_000 }, (_, index) => ({ id: `light_cap_${index}`, x: 10, y: 10, radius: 20, color: "#facc15", intensity: 0.2, kind: "light" as const, magical: false }));
+    const app = await buildApp({ store });
+    const wall = await app.inject({ method: "POST", url: "/api/v1/scenes/scn_vault_entry/walls", headers: authHeaders, payload: { x1: 10, y1: 10, x2: 200, y2: 10 } });
+    expect(wall.statusCode).toBe(400);
+    expect(wall.json().message).toContain("limited to 10000");
+    const light = await app.inject({ method: "POST", url: "/api/v1/scenes/scn_vault_entry/lights", headers: authHeaders, payload: { x: 100, y: 100 } });
+    expect(light.statusCode).toBe(400);
+    expect(light.json().message).toContain("limited to 5000");
+    expect(scene.walls).toHaveLength(10_000);
+    expect(scene.lights).toHaveLength(5_000);
+    const oversizedScene = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/scenes",
+      headers: authHeaders,
+      payload: { name: "Too Many Walls", walls: Array.from({ length: 10_001 }, () => ({})) }
+    });
+    expect(oversizedScene.statusCode).toBe(400);
+    expect(store.state.scenes.some((item) => item.name === "Too Many Walls")).toBe(false);
+    await app.close();
+  });
+
   it("supports polygon reveal and hide brush fog operations", async () => {
     const store = new MemoryStateStore();
     const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
@@ -14467,14 +14492,14 @@ describe("api", () => {
         wallCount: 5,
         lightCount: 3,
         terrainWallCount: 2,
-        maxPolygonVertexCount: 140,
+        maxPolygonVertexCount: 138,
         issueCount: 15
       })
     );
     expect(diagnostics.json().complexity).toEqual(
       expect.objectContaining({
         polygonVertexCount: expect.any(Number),
-        maxPolygonVertexCount: 140,
+        maxPolygonVertexCount: 138,
         sourceCounts: expect.objectContaining({ fog: expect.any(Number), light: expect.any(Number), token: expect.any(Number) })
       })
     );
@@ -14498,7 +14523,7 @@ describe("api", () => {
         expect.objectContaining({ code: "fog_point_out_of_bounds", targetId: "fog_bad_polygon" }),
         expect.objectContaining({ code: "invalid_fog_radius", targetId: "fog_bad_radius_origin" }),
         expect.objectContaining({ code: "fog_origin_out_of_bounds", targetId: "fog_bad_radius_origin" }),
-        expect.objectContaining({ code: "large_vision_polygon", targetType: "scene", targetId: "rendering", maxPolygonVertexCount: 140 }),
+        expect.objectContaining({ code: "large_vision_polygon", targetType: "scene", targetId: "rendering", maxPolygonVertexCount: 138 }),
         expect.objectContaining({ code: "high_vision_vertex_count", targetType: "scene", targetId: "rendering", polygonVertexCount: expect.any(Number) }),
         expect.objectContaining({ code: "zero_length_wall", targetId: "wall_zero_length" }),
         expect.objectContaining({ code: "wall_out_of_bounds", targetId: "wall_outside_bounds" }),
@@ -14728,10 +14753,10 @@ describe("api", () => {
           budget: expect.objectContaining({
             maxPolygonVertexBudget: 96,
             totalPolygonVertexBudget: 512,
-            maxPolygonVertexCount: 141,
-            maxPolygonUsageRatio: 1.469,
-            polygonVertexCount: 1015,
-            totalPolygonUsageRatio: 1.982,
+            maxPolygonVertexCount: 137,
+            maxPolygonUsageRatio: 1.427,
+            polygonVertexCount: 998,
+            totalPolygonUsageRatio: 1.949,
             totalPolygonExceeded: true,
             scenesExceedingMaxPolygonBudget: 1,
             scenesExceedingTotalPolygonBudget: 1
@@ -14877,8 +14902,8 @@ describe("api", () => {
             campaignCount: 1,
             sceneActionRequiredCount: 2,
             issueCount: 20,
-            maxPolygonVertexCount: 141,
-            polygonVertexCount: 1015,
+            maxPolygonVertexCount: 137,
+            polygonVertexCount: 998,
             lightCount: 4,
             terrainWallCount: 2,
             degenerateWallCount: 2,
@@ -14982,7 +15007,7 @@ describe("api", () => {
               actionRequired: true,
               actionReasons: ["rendering_errors", "large_vision_polygon", "high_vision_vertex_count"],
               budget: expect.objectContaining({ maxPolygonVertexBudget: 96, totalPolygonVertexBudget: 512, maxPolygonExceeded: true, totalPolygonExceeded: true }),
-              counts: expect.objectContaining({ issueCount: 19, fogRegionCount: 4, wallCount: 6, lightCount: 4, maxPolygonVertexCount: 141, terrainWallCount: 2, degenerateWallCount: 1 }),
+              counts: expect.objectContaining({ issueCount: 19, fogRegionCount: 4, wallCount: 6, lightCount: 4, maxPolygonVertexCount: 137, terrainWallCount: 2, degenerateWallCount: 1 }),
               topIssues: expect.arrayContaining([
                 expect.objectContaining({ code: "fog_polygon_too_small", targetType: "fog", targetId: "fog_admin_bad_polygon" }),
                 expect.objectContaining({ code: "zero_length_wall", targetType: "wall", targetId: "wall_admin_zero_length" })
@@ -15031,7 +15056,7 @@ describe("api", () => {
               code: "large_vision_polygon",
               severity: "warning",
               message: expect.stringContaining("recommended vertex budget"),
-              details: expect.objectContaining({ maxPolygonVertexCount: 141, maxPolygonVertexBudget: 96 })
+              details: expect.objectContaining({ maxPolygonVertexCount: 137, maxPolygonVertexBudget: 96 })
             })
           })
         ])
