@@ -1,5 +1,5 @@
-import type { CharacterClaimOption, CharacterClaimResult } from "@open-tabletop/api-contracts";
-import { CharacterClaimPanel } from "./character-claim-panel.js";
+import type { CharacterClaimOption } from "@open-tabletop/api-contracts";
+import { CharacterClaimPanel, submitCharacterChoice } from "./character-claim-panel.js";
 import { tokenRestorePayload } from "./token-restore.js";
 import { compendiumPlacementActions, type BoardAction, type PlacementAttempts } from "./compendium-placement-client.js";
 import { EmptyState, WorkspaceLoading, canCommitSceneSwitch, preloadWorkspaceScene, retrySceneSwitch } from "./workspace-states.js";
@@ -3042,23 +3042,12 @@ export function App() {
   }
 
   async function chooseCharacter(option: CharacterClaimOption, idempotencyKey: string, managing: boolean) {
-    await runWorkspaceBoundAction(async (request) => {
-      const options = { idempotencyKey, signal: request.controller.signal };
-      const actorPath = `/api/v1/campaigns/${encodeURIComponent(request.campaignId)}/actors/${encodeURIComponent(option.actorId)}`;
-      if (managing) {
-        await apiPost(actorPath + "/claim-offer", { expectedUpdatedAt: option.updatedAt, offered: !option.offered }, options);
-        return undefined;
-      }
-      return apiPost<CharacterClaimResult>(actorPath + "/claim", { expectedUpdatedAt: option.updatedAt }, options);
-    }, async (claim, request) => {
+    await runWorkspaceBoundAction((request) => submitCharacterChoice(request.campaignId, option, managing, idempotencyKey, request.controller.signal), async (claim, request) => {
       const next = await refresh(request.campaignId, claim?.sceneId ?? realtimeSelectionRef.current.sceneId, { syncStatus: false, selectSceneOnLoad: claim ? () => workspaceBoundRequestIsCurrent(request) : undefined });
       if (!workspaceBoundRequestIsCurrent(request)) return;
       if (claim && next.tokens.some((token) => token.id === claim.tokenId && token.actorId === claim.actorId && token.ownerUserIds?.includes(request.userId))) {
         setActiveTokenLayer("player");
-        setSelectedBoardAssetId("");
-        setSelectedActorId(claim.actorId);
-        setSelectedTokenIdState(claim.tokenId);
-        setSelectedTokenIds([claim.tokenId]);
+        selectSingleToken(claim.tokenId, claim.actorId);
         resetWorkspaceNavigation("live", "actors");
         setInspectorOpen(true);
         setStatus(`Joined the table as ${option.name}`);
@@ -5161,12 +5150,12 @@ export function App() {
     setBattleMapZoom(1);
   }
 
-  function selectSingleToken(tokenId: string) {
+  function selectSingleToken(tokenId: string, actorId = snapshot.tokens.find((token) => token.id === tokenId)?.actorId ?? "") {
     if (tokenId && !shortPhone) setInspectorOpen(true);
     setSelectedBoardAssetId("");
     setSelectedTokenIdState(tokenId);
     setSelectedTokenIds(tokenId ? [tokenId] : []);
-    setSelectedActorId(snapshot.tokens.find((token) => token.id === tokenId)?.actorId ?? "");
+    setSelectedActorId(actorId);
   }
 
   function selectActor(actorId: string) {

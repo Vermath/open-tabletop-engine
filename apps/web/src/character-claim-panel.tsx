@@ -1,7 +1,17 @@
-import type { CharacterClaimOption } from "@open-tabletop/api-contracts";
+import type { CharacterClaimOption, CharacterClaimResult } from "@open-tabletop/api-contracts";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { apiGet, type Snapshot } from "./api.js";
+import { apiGet, apiPost, type Snapshot } from "./api.js";
 import { errorMessage } from "./sheet-format.js";
+
+export async function submitCharacterChoice(campaignId: string, option: CharacterClaimOption, managing: boolean, idempotencyKey: string, signal: AbortSignal) {
+  const actorPath = `/api/v1/campaigns/${encodeURIComponent(campaignId)}/actors/${encodeURIComponent(option.actorId)}`;
+  const options = { idempotencyKey, signal };
+  if (managing) {
+    await apiPost(actorPath + "/claim-offer", { expectedUpdatedAt: option.updatedAt, offered: !option.offered }, options);
+    return undefined;
+  }
+  return apiPost<CharacterClaimResult>(actorPath + "/claim", { expectedUpdatedAt: option.updatedAt }, options);
+}
 
 export function CharacterClaimPanel(props: {
   campaignId: string;

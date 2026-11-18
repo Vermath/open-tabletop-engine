@@ -25,6 +25,8 @@ import type {
   CampaignSession,
   PartyRollRequest,
   PartyRollChoice,
+  CharacterClaimOption,
+  CharacterClaimResult,
   CharacterTransfer,
   CampaignWebhookDeliveryStatus,
   CampaignWebhookEnvelopeEventType,
@@ -2790,6 +2792,28 @@ export class OpenTabletopClient {
     return this.patch(routes.campaign(campaignId), input, {
       "Idempotency-Key": idempotencyKey,
     });
+  }
+
+  async characterClaims(campaignId: string): Promise<CharacterClaimOption[]> {
+    return this.get(routes.characterClaims(campaignId));
+  }
+
+  async setCharacterClaimOffer(
+    campaignId: string,
+    actorId: string,
+    input: { offered: boolean; expectedUpdatedAt: string },
+    idempotencyKey: string,
+  ): Promise<CharacterClaimOption> {
+    return this.post(routes.characterClaimOffer(campaignId, actorId), input, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async claimCharacter(
+    campaignId: string,
+    actorId: string,
+    input: { expectedUpdatedAt: string },
+    idempotencyKey: string,
+  ): Promise<CharacterClaimResult> {
+    return this.post(routes.characterClaim(campaignId, actorId), input, { "Idempotency-Key": idempotencyKey });
   }
 
   async characterTransfers(campaignId: string): Promise<CharacterTransfer[]> {

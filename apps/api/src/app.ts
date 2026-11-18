@@ -3803,7 +3803,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       throw error;
     }
     archive.manifest.systemRequirements = systemRequirementsForCampaign(store, source.id);
-    const regenerated = archiveWithRegeneratedIds(archive, { userId, organizationId: workspace.id });
+    const authorizedSourceOffers = new Set(store.state.actors.filter((actor) => actor.campaignId === source.id && characterOfferIsAuthorized(store, actor)).map((actor) => actor.id));
+    const regenerated = archiveWithRegeneratedIds(archive, { userId, organizationId: workspace.id, authorizedSourceOffers });
     const portable = secureArchiveIdentityForImport(store.state, regenerated, { userId, organizationId: workspace.id });
     const copiedCampaign = portable.data.campaigns[0];
     if (!copiedCampaign) return badRequest(reply, "Campaign archive did not contain a campaign record");
@@ -21407,7 +21408,7 @@ function isTokenOwnedByUser(store: StateStore, userId: string, token: Token): bo
 }
 
 function characterOfferIsAuthorized(store: StateStore, actor: Actor): boolean {
-  if (!actor.characterClaimOffered) return false;
+  if (actor.characterClaimOffered !== true) return false;
   // A starter-created offer belongs to the campaign owner.
   const managerId = actor.characterClaimOfferedByUserId ?? store.state.campaigns.find((campaign) => campaign.id === actor.campaignId)?.ownerUserId;
   return Boolean(managerId && isActiveUserId(store, managerId) && isCharacterClaimManager(store, actor.campaignId, managerId)

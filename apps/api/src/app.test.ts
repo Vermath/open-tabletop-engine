@@ -438,6 +438,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   if (path === "/api/v1/campaigns/{campaignId}/duplicate") return { excluded: "campaign_lifecycle" };
   if (path.endsWith("/scene-duplications")) return { excluded: "human_confirmed_scene_duplication" };
   if (path.includes("/archive-import-operations")) return { excluded: "human_confirmed_archive_recovery" };
+  if (path.endsWith("/character-claims") || path.endsWith("/claim-offer") || path.endsWith("/actors/{actorId}/claim")) return { excluded: "human_character_ownership_lifecycle" };
   if (path.includes("/character-transfers")) return { excluded: "human_character_ownership_lifecycle" };
   if (path.includes("/party-roll-requests")) return { excluded: "gm_requested_player_roll" };
   if (path.endsWith("/ownership-transfer")) return { excluded: "campaign_member_admin" };
@@ -12440,6 +12441,9 @@ describe("api", () => {
       { method: "GET", url: "/api/v1/campaigns/camp_demo/party-roll-requests/choices" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/party-roll-requests", headers: { "idempotency-key": "auth-matrix-party-roll" }, payload: { rollId: "skill-perception", actorIds: ["missing-party-character"] } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/party-roll-requests/missing-request/actors/act_valen/roll", payload: {} },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/character-claims" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/actors/act_valen/claim-offer", headers: { "idempotency-key": "auth-matrix-character-offer" }, payload: { offered: true, expectedUpdatedAt: "2026-05-01T00:00:00.000Z" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/actors/act_valen/claim", headers: { "idempotency-key": "auth-matrix-character-claim" }, payload: { expectedUpdatedAt: "2026-05-01T00:00:00.000Z" } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/character-transfers" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/actors/act_valen/transfers", headers: { "idempotency-key": "auth-matrix-character-transfer-create" }, payload: { toUserId: "usr_demo_player", expectedUpdatedAt: store.state.actors.find((actor) => actor.id === "act_valen")!.updatedAt } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/character-transfers/charxfer_auth_matrix_accept/accept", headers: { "idempotency-key": "auth-matrix-character-transfer-accept" }, payload: { expectedUpdatedAt: "2026-05-01T00:00:00.000Z" } },
@@ -13375,6 +13379,8 @@ describe("api", () => {
       ["POST /api/v1/scenes/{sceneId}/compendium-monster-placements", 409],
       ["POST /api/v1/scenes/{sceneId}/compendium-monster-placements/{placementId}/history", 409],
       ["POST /api/v1/scenes/{sceneId}/encounter-monster-placements", 409],
+      ["POST /api/v1/campaigns/{campaignId}/actors/{actorId}/claim-offer", 409],
+      ["POST /api/v1/campaigns/{campaignId}/actors/{actorId}/claim", 403],
       ["POST /api/v1/campaigns/{campaignId}/actors/{actorId}/transfers", 201],
       ["POST /api/v1/campaigns/{campaignId}/party-roll-requests", 400], // The requested character does not exist.
       ["POST /api/v1/campaigns/{campaignId}/party-roll-requests/{requestId}/actors/{actorId}/roll", 404],

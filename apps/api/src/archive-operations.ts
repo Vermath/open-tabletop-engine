@@ -1,3 +1,4 @@
+import { campaignCharacterClaimRoster } from "./character-claims.js";
 import { createHash } from "node:crypto";
 import { createId, createTimestamped, emptyState, normalizeEngineState, nowIso, type Actor, type Campaign, type CampaignMember, type CampaignArchive, type CampaignArchiveFile, type Combat, type ContentImportAppliedRecord, type ContentImportEntity, type ContentImportEntityKind, type ContentImportSource, type Encounter, type EngineState, type Handout, type Item, type JournalEntry, type MapAsset, type PermissionName, type Proposal, type ProposalChange, type Scene, type Token, type User, type World } from "@open-tabletop/core";
 import { assetStorageKey, type AssetStorage } from "./asset-storage.js";
@@ -1161,8 +1162,16 @@ export const archiveIdPrefixes: Record<(typeof regeneratableArchiveCollections)[
   fogPresets: "fogp"
 };
 
-export function archiveWithRegeneratedIds(archive: CampaignArchive, options: { userId: string; organizationId: string }): CampaignArchive {
+export function archiveWithRegeneratedIds(archive: CampaignArchive, options: { userId: string; organizationId: string; authorizedSourceOffers?: ReadonlySet<string> }): CampaignArchive {
   const data = clonePlain(archive.data);
+  if (options.authorizedSourceOffers) {
+    for (const actor of data.actors) {
+      if (!options.authorizedSourceOffers.has(actor.id)) {
+        delete actor.characterClaimOffered;
+        delete actor.characterClaimOfferedByUserId;
+      }
+    }
+  }
   const idMap = new Map<string, string>();
   for (const collection of regeneratableArchiveCollections) {
     for (const record of data[collection] as Array<{ id?: string }>) {
@@ -1201,6 +1210,19 @@ export function archiveWithRegeneratedIds(archive: CampaignArchive, options: { u
         role: "owner" as const
       }) satisfies CampaignMember
     );
+  }
+  // Copy an eligible offer with its character and token owners. The source
+  // offering GM has no membership in the new campaign.
+  for (const campaignId of copiedCampaignIds) {
+    for (const { actor, eligible, tokens } of campaignCharacterClaimRoster(remappedData, campaignId)) {
+      if (actor.characterClaimOffered === true && eligible) {
+        actor.characterClaimOfferedByUserId = options.userId;
+        for (const token of tokens) if (token.ownerUserIds?.length) token.ownerUserIds = [options.userId];
+      } else {
+        delete actor.characterClaimOffered;
+        delete actor.characterClaimOfferedByUserId;
+      }
+    }
   }
   for (const actor of remappedData.actors) {
     if (copiedCampaignIds.has(actor.campaignId)) actor.ownerUserId = options.userId;
@@ -1317,6 +1339,34 @@ export function secureArchiveIdentityForImport(
 
   for (const actor of data.actors) {
     if (actor.ownerUserId && !knownUserIds.has(actor.ownerUserId)) actor.ownerUserId = options.userId;
+  }
+  // A restored archive cannot issue a new offer on someone else's existing
+  // table. Preserve local offers only while the actor has the same owner.
+  const existingActors = new Map(state.actors.map((actor) => [actor.id, actor]));
+  for (const actor of data.actors) {
+    if (newCampaignIds.has(actor.campaignId)) {
+      if (actor.characterClaimOffered === true && (!actor.ownerUserId || actor.ownerUserId === options.userId)) {
+        actor.characterClaimOfferedByUserId = options.userId;
+        continue;
+      }
+    } else {
+      const existing = existingActors.get(actor.id);
+      if (existing?.campaignId === actor.campaignId && existing.characterClaimOffered === true && existing.ownerUserId === actor.ownerUserId) {
+        actor.characterClaimOffered = true;
+        actor.characterClaimOfferedByUserId = existing.characterClaimOfferedByUserId;
+        continue;
+      }
+    }
+    delete actor.characterClaimOffered;
+    delete actor.characterClaimOfferedByUserId;
+  }
+  for (const campaignId of newCampaignIds) {
+    for (const { actor, eligible } of campaignCharacterClaimRoster(data, campaignId)) {
+      if (!eligible) {
+        delete actor.characterClaimOffered;
+        delete actor.characterClaimOfferedByUserId;
+      }
+    }
   }
   for (const journal of data.journals) {
     journal.visibleToUserIds = journal.visibleToUserIds.filter((userId) => knownUserIds.has(userId));

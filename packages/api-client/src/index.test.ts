@@ -1760,6 +1760,9 @@ describe("OpenTabletopClient", () => {
         },
         "campaign-duplicate-client",
       ),
+      client.characterClaims(campaignId),
+      client.setCharacterClaimOffer(campaignId, actorId, { offered: true, expectedUpdatedAt: "2026-07-13T00:00:00.000Z" }, "character-offer-client"),
+      client.claimCharacter(campaignId, actorId, { expectedUpdatedAt: "2026-07-13T00:00:00.000Z" }, "character-claim-client"),
       client.characterTransfers(campaignId),
       client.createCharacterTransfer(
         campaignId,
