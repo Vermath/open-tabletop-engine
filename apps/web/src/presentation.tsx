@@ -5,6 +5,12 @@ import { apiPost, baseUrl, type Snapshot } from "./api.js";
 import { MarkdownDocument } from "./markdown-document.js";
 import { errorMessage } from "./sheet-format.js";
 
+export function presentationSeatAccess(scope: Snapshot["membershipScope"], campaignId: string, userId: string, sessionEpoch: number, members: Snapshot["members"]): "pending" | "allowed" | "denied" {
+  if (!scope || scope.campaignId !== campaignId || scope.userId !== userId || scope.sessionEpoch !== sessionEpoch) return "pending";
+  const member = members.find((row) => row.campaignId === campaignId && row.user.id === userId);
+  return member?.role === "player" && member.active !== false ? "allowed" : "denied";
+}
+
 export function PresentToPlayers({ campaignId, target, members }: { campaignId: string; target: PresentationTarget; members: Snapshot["members"] }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -50,14 +56,11 @@ export function isPresentation(value: unknown): value is RealtimePresentation {
 
 export function PresentedContent({ content, onDismiss }: { content: RealtimePresentation; onDismiss(): void }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const dismiss = useRef(onDismiss);
-  dismiss.current = onDismiss;
   useEffect(() => {
     const element = dialog.current;
     element?.showModal();
-    const timeout = window.setTimeout(() => dismiss.current(), Math.max(0, content.expiresAt - Date.now()));
-    return () => { window.clearTimeout(timeout); element?.close(); };
-  }, [content.id, content.expiresAt]);
+    return () => element?.close();
+  }, [content.id]);
   return <dialog ref={dialog} className="scene-pin-dialog presented-content" aria-label="Shared by the GM" onCancel={onDismiss}>
     <div className="lore-editor-title"><h2>{content.title}</h2><button type="button" className="ghost-button" onClick={onDismiss}>Dismiss</button></div>
     <MarkdownDocument source={content.body} label={content.title} />

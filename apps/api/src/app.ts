@@ -1228,7 +1228,17 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     for (const client of unique.values()) publishPresenceAfterRemoval(client);
   };
   const disconnectRealtimeSession = (sessionId: string) => publishRealtimeRemovals(hub.disconnectSession(sessionId));
-  const disconnectUnauthorizedRealtimeClients = () => publishRealtimeRemovals(hub.disconnectWhere((client) => !realtimeClientAuthorizationIsCurrent(store, client)));
+  const disconnectUnauthorizedRealtimeClients = () => publishRealtimeRemovals(hub.disconnectWhere((client) => {
+    if (!realtimeClientAuthorizationIsCurrent(store, client)) return true;
+    const grant = client.presentation;
+    if (grant && !store.state.members.some((member) => member.campaignId === client.campaignId && member.userId === client.userId && member.role === "player")) {
+      delete client.presentation;
+      try {
+        client.send(JSON.stringify({ channel: "presentation.revoked", campaignId: client.campaignId, id: grant.id }));
+      } catch { return true; }
+    }
+    return false;
+  }));
   let pluginEventQueue = Promise.resolve();
   let pendingPluginEventCount = 0;
   let webhookEventQueue = Promise.resolve();
@@ -6948,7 +6958,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       const envelope: RealtimePresentation = { channel: "presentation", campaignId, id, expiresAt, title: entry.title, body: entry.body, images };
       try {
         client.send(JSON.stringify(envelope));
-        client.presentation = handout && images.length ? { id, expiresAt, handoutId: handout.id, assetIds: new Set(images.map((image) => image.assetId)) } : undefined;
+        client.presentation = { id, expiresAt, handoutId: handout?.id, assetIds: new Set(images.map((image) => image.assetId)) };
         delivered.add(client.userId);
       } catch {
         hub.remove(client);

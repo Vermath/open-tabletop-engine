@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { selectInspectorPanel } from "./inspector-navigation.js";
 import { expect, type Page } from "@playwright/test";
 import { test } from "./active-scene-fixture.js";
-import type { Handout } from "../../packages/core/src/types.js";
+import type { CampaignMember, Handout } from "../../packages/core/src/types.js";
 
 const api = `http://127.0.0.1:${process.env.OTTE_E2E_API_PORT ?? 4100}`;
 const origin = `http://127.0.0.1:${process.env.OTTE_E2E_WEB_PORT ?? 5174}`;
@@ -128,6 +128,59 @@ test("presents a private illustrated handout and journal pin while the player st
     await expect(playerBoard).toBeVisible();
     expect(player.url()).toBe(beforeUrl);
     await expect.poll(async () => (await player.request.get(imageUrl, { headers: headers() })).status()).toBe(404);
+    // A new socket can receive a private presentation before the campaign snapshot arrives.
+    await player.evaluate(() => sessionStorage.setItem("hold-test-snapshot", "1"));
+    await player.addInitScript(() => {
+      if (!sessionStorage.getItem("hold-test-snapshot")) return;
+      sessionStorage.removeItem("hold-test-snapshot");
+      const held = new Promise<void>((resolve) => window.addEventListener("release-test-snapshot", () => resolve(), { once: true }));
+      const fetch = window.fetch.bind(window);
+      window.fetch = async (...args) => {
+        const response = await fetch(...args);
+        if (new URL(response.url).pathname === "/api/v1/campaigns/camp_demo/snapshot") await held;
+        return response;
+      };
+    });
+    let receivedPresence!: () => void;
+    let receivedPresentation!: () => void;
+    const connected = new Promise<void>((resolve) => { receivedPresence = resolve; });
+    const delivered = new Promise<void>((resolve) => { receivedPresentation = resolve; });
+    player.on("websocket", (socket) => {
+      if (new URL(socket.url()).pathname !== "/api/v1/realtime") return;
+      socket.on("framereceived", ({ payload }) => {
+        const frame = JSON.parse(String(payload));
+        if (frame.type === "presence.snapshot") receivedPresence();
+        if (frame.channel === "presentation") receivedPresentation();
+      });
+    });
+    try {
+      await player.reload({ waitUntil: "domcontentloaded" });
+      await connected;
+      await page.getByRole("button", { name: "Show selected players" }).click();
+      await delivered;
+      await expect(modal).toHaveCount(0);
+    } finally {
+      await player.evaluate(() => window.dispatchEvent(new Event("release-test-snapshot")));
+    }
+    await expect.poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    const secondUrl = (await image.getAttribute("src"))!;
+    async function seatRole(role: "observer" | "player") {
+      const members = await page.request.get(campaign + "/members", { headers: headers() });
+      const member = (await members.json() as CampaignMember[]).find((m) => m.userId === "usr_demo_player")!;
+      const changed = await page.request.patch(`${campaign}/members/${member.id}`, { headers: headers(), data: { role, expectedUpdatedAt: member.updatedAt } });
+      expect(changed.ok(), await changed.text()).toBe(true);
+    }
+    await seatRole("observer");
+    try {
+      await expect(modal).toHaveCount(0);
+      await expect(player.getByText(handout.title, { exact: true })).toHaveCount(0);
+      await expect(player.getByText(handout.body, { exact: true })).toHaveCount(0);
+      await expect(player.getByRole("img", { name: asset.name })).toHaveCount(0);
+      await expect(playerBoard).toBeVisible();
+    } finally {
+      await seatRole("player");
+    }
+    expect((await player.request.get(secondUrl, { headers: headers() })).status()).toBe(404);
     const persisted = await page.request.get(`${api}/api/v1/handouts/${handout.id}`, { headers: headers() });
     expect(await persisted.json()).toMatchObject({ visibility: "gm_only", visibleToUserIds: [], visibleToActorIds: [] });
 

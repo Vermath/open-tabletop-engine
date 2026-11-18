@@ -44,7 +44,7 @@ import { createVisionReconciliation } from "./vision-reconciliation.js";
 import { loadRealtimeWorkspaceChanges } from "./realtime-workspace-load.js";
 import { changesRealtimeRecord, removeRealtimeRecord, sameSnapshotValue, upsertBoundedRealtimeRecord, upsertNewestPrependedRealtimeRecord, upsertNewestRealtimeRecord, upsertNewestRealtimeRecords, upsertRealtimeRecord } from "./realtime-snapshot-delta.js";
 import type { RealtimePresentation } from "@open-tabletop/core";
-import { isPresentation, PresentedContent } from "./presentation.js";
+import { isPresentation, presentationSeatAccess, PresentedContent } from "./presentation.js";
 import { applyPresenceEnvelope, parseRealtimePayload, realtimeSequenceDecision } from "./realtime-sequence.js";
 import { settleWorkspaceLoreLoad } from "./workspace-lore-load.js";
 import { settleWorkspaceBoundAction, type WorkspaceBoundRequest, type WorkspaceRequestIdentity } from "./workspace-bound-action.js";
@@ -667,6 +667,18 @@ export function App() {
   const campaignSetupDraftKey = campaignSetupDraftScope ? campaignSetupDraftStorageKey(campaignSetupDraftScope) : "";
   const currentMember = snapshot.members.find((member) => member.user.id === currentUserId);
   const canManagePartyRolls = Boolean(currentMember && ["owner", "gm", "assistant_gm"].includes(currentMember.role) && currentMember.permissions.includes("combat.manage"));
+  const presentationAccess = presentationSeatAccess(snapshot.membershipScope, campaignId, currentUserId, sessionTransportEpoch, snapshot.members);
+  useEffect(() => {
+    if (!presentation || presentation.connectionKey !== realtimeConnectionKey) return;
+    const dismiss = () => {
+      dismissPresentation.current?.(presentation.content.id);
+      setPresentation((current) => current?.content.id === presentation.content.id ? undefined : current);
+    };
+    const remaining = presentation.content.expiresAt - Date.now();
+    if (presentationAccess === "denied" || remaining <= 0) { dismiss(); return; }
+    const timer = window.setTimeout(dismiss, remaining);
+    return () => window.clearTimeout(timer);
+  }, [presentation, presentationAccess, realtimeConnectionKey]);
   const hasPermission = (permission: PermissionName) => currentMember?.permissions.includes(permission) ?? false;
   const orderedScenes = [...snapshot.scenes].sort(compareScenesForDisplay);
   const accessibleScenes = hasPermission("scene.update") ? orderedScenes : orderedScenes.filter((scene) => scene.active);
@@ -2094,6 +2106,12 @@ export function App() {
       onMessage: (data) => {
         if (cancelled) return;
         const message = parseRealtimePayload(data);
+        if (message && typeof message === "object" && "channel" in message && message.channel === "presentation.revoked") {
+          if ("campaignId" in message && message.campaignId === campaignId && "id" in message) {
+            setPresentation((current) => current?.content.id === message.id ? undefined : current);
+          }
+          return;
+        }
         if (isPresentation(message)) {
           if (message.campaignId === campaignId && message.expiresAt > Date.now()) setPresentation({ connectionKey: realtimeConnectionKey, content: message });
           return;
@@ -9096,7 +9114,7 @@ export function App() {
     <>
     {consequenceReview.dialog}
     {sceneMapPreparation.dialog}
-    {presentation && presentation.connectionKey === realtimeConnectionKey && <PresentedContent content={presentation.content} onDismiss={() => {
+    {presentationAccess === "allowed" && presentation && presentation.connectionKey === realtimeConnectionKey && presentation.content.expiresAt > Date.now() && <PresentedContent content={presentation.content} onDismiss={() => {
       dismissPresentation.current?.(presentation.content.id);
       setPresentation(undefined);
     }} />}

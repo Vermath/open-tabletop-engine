@@ -419,6 +419,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   if (path.startsWith("/api/v1/admin/") || path.startsWith("/api/v1/scim/")) return { excluded: "server_admin_or_scim" };
   if (path === "/api/v1/health" || path === "/api/v1/openapi.json") return { excluded: "public_diagnostics" };
   if (path === "/api/v1/mcp") return { excluded: "mcp_transport" };
+  if (path === "/api/v1/campaigns/{campaignId}/presentations") return { excluded: "human_live_seat_presentation" };
   if (path.startsWith("/api/v1/agent/board-captures/")) return { tools: ["capture_board_view"] };
   if (path.startsWith("/api/v1/auth/")) {
     if (method === "GET" && (path === "/api/v1/auth/session" || path === "/api/v1/auth/sessions" || path === "/api/v1/auth/mfa")) return { tools: ["read_account"] };
@@ -12577,6 +12578,8 @@ describe("api", () => {
       { method: "DELETE", url: "/api/v1/journal/jnl_hook?expectedUpdatedAt=2020-01-01T00%3A00%3A00.000Z", headers: { "idempotency-key": "auth-matrix-journal-delete" } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/handouts" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/handouts", payload: { title: "No Auth Handout" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/presentations", payload: { targetType: "handout", targetId: authMatrixHandout.id,
+        expectedUpdatedAt: authMatrixHandout.updatedAt, recipientUserIds: ["usr_demo_player"] } },
       { method: "GET", url: "/api/v1/handouts/hnd_auth_matrix" },
       { method: "PATCH", url: "/api/v1/handouts/hnd_auth_matrix", payload: { title: "No Auth Handout Rename" } },
       { method: "DELETE", url: "/api/v1/handouts/hnd_auth_matrix" },
@@ -13495,6 +13498,7 @@ describe("api", () => {
 
       if (campaignChild?.[1]) revision = store.state.campaigns.find((record) => record.id === campaignChild[1])?.updatedAt;
       else if (rollableTableMutation?.[1]) revision = store.state.rollableTables.find((record) => record.id === rollableTableMutation[1])?.updatedAt;
+      else if (pathname.endsWith("/presentations")) revision = store.state.handouts.find((record) => record.id === authMatrixHandout.id)?.updatedAt;
       else if (campaignVersionedCreate?.[1]) {
         revision = store.state.campaigns.find((record) => record.id === campaignVersionedCreate[1])?.updatedAt;
         revisionProperty = "expectedCampaignUpdatedAt";
