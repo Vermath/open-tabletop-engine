@@ -439,6 +439,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   if (path.endsWith("/scene-duplications")) return { excluded: "human_confirmed_scene_duplication" };
   if (path.includes("/archive-import-operations")) return { excluded: "human_confirmed_archive_recovery" };
   if (path.includes("/character-transfers")) return { excluded: "human_character_ownership_lifecycle" };
+  if (path.includes("/party-roll-requests")) return { excluded: "gm_requested_player_roll" };
   if (path.endsWith("/ownership-transfer")) return { excluded: "campaign_member_admin" };
   if (path.includes("/webhooks")) return { excluded: "human_campaign_integration_admin" };
   if (path === "/api/v1/campaigns/{campaignId}/snapshot") return { excluded: "client_state_aggregation" };
@@ -12431,6 +12432,9 @@ describe("api", () => {
       { method: "POST", url: "/api/v1/campaigns/camp_demo/ownership-transfer", payload: { targetUserId: "usr_demo_player", expectedUpdatedAt: "2026-07-13T00:00:00.000Z" } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/duplicate", headers: { "idempotency-key": "auth-matrix-campaign-duplicate" }, payload: { name: "Auth Matrix Copy", expectedUpdatedAt: store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/scene-duplications", headers: { "idempotency-key": "auth-matrix-scene-duplication" }, payload: { operationId: "auth-matrix-scene-duplication", expectedUpdatedAt: "2020-01-01T00:00:00.000Z", sources: [{ sceneId: "scn_vault_entry", expectedUpdatedAt: "2020-01-01T00:00:00.000Z" }], dryRun: true } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/party-roll-requests/choices" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/party-roll-requests", headers: { "idempotency-key": "auth-matrix-party-roll" }, payload: { rollId: "skill-perception", actorIds: ["missing-party-character"] } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/party-roll-requests/missing-request/actors/act_valen/roll", payload: {} },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/character-transfers" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/actors/act_valen/transfers", headers: { "idempotency-key": "auth-matrix-character-transfer-create" }, payload: { toUserId: "usr_demo_player", expectedUpdatedAt: store.state.actors.find((actor) => actor.id === "act_valen")!.updatedAt } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/character-transfers/charxfer_auth_matrix_accept/accept", headers: { "idempotency-key": "auth-matrix-character-transfer-accept" }, payload: { expectedUpdatedAt: "2026-05-01T00:00:00.000Z" } },
@@ -12928,6 +12932,7 @@ describe("api", () => {
     const observerReadForbiddenRouteKeys = new Map<string, string>([
       ["GET /api/v1/organization/invites", "organization admin invite roster"],
       ["GET /api/v1/campaigns/{campaignId}/invites", "campaign invite roster requires campaign update"],
+      ["GET /api/v1/campaigns/{campaignId}/party-roll-requests/choices", "Only a GM can select player characters for checks"],
       ["GET /api/v1/campaigns/{campaignId}/sessions", "campaign session preparation requires campaign update"],
       ["GET /api/v1/campaigns/{campaignId}/webhooks", "campaign webhooks require campaign update"],
       ["GET /api/v1/campaigns/{campaignId}/webhooks/{webhookId}/deliveries", "campaign webhook deliveries require campaign update"],
@@ -13360,6 +13365,8 @@ describe("api", () => {
       ["POST /api/v1/scenes/{sceneId}/compendium-monster-placements/{placementId}/history", 409],
       ["POST /api/v1/scenes/{sceneId}/encounter-monster-placements", 409],
       ["POST /api/v1/campaigns/{campaignId}/actors/{actorId}/transfers", 201],
+      ["POST /api/v1/campaigns/{campaignId}/party-roll-requests", 400], // The requested character does not exist.
+      ["POST /api/v1/campaigns/{campaignId}/party-roll-requests/{requestId}/actors/{actorId}/roll", 404],
       ["POST /api/v1/campaigns/{campaignId}/character-transfers/{transferId}/accept", 404],
       ["POST /api/v1/campaigns/{campaignId}/character-transfers/{transferId}/decline", 404],
       ["POST /api/v1/campaigns/{campaignId}/character-transfers/{transferId}/cancel", 404],
