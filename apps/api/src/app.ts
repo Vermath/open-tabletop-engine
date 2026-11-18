@@ -3750,7 +3750,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       throw error;
     }
     archive.manifest.systemRequirements = systemRequirementsForCampaign(store, source.id);
-    const regenerated = archiveWithRegeneratedIds(archive, { userId, organizationId: workspace.id });
+    const authorizedSourceOffers = new Set(store.state.actors.filter((actor) => actor.campaignId === source.id && characterOfferIsAuthorized(store, actor)).map((actor) => actor.id));
+    const regenerated = archiveWithRegeneratedIds(archive, { userId, organizationId: workspace.id, authorizedSourceOffers });
     const portable = secureArchiveIdentityForImport(store.state, regenerated, { userId, organizationId: workspace.id });
     const copiedCampaign = portable.data.campaigns[0];
     if (!copiedCampaign) return badRequest(reply, "Campaign archive did not contain a campaign record");

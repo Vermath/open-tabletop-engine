@@ -1156,8 +1156,16 @@ export const archiveIdPrefixes: Record<(typeof regeneratableArchiveCollections)[
   fogPresets: "fogp"
 };
 
-export function archiveWithRegeneratedIds(archive: CampaignArchive, options: { userId: string; organizationId: string }): CampaignArchive {
+export function archiveWithRegeneratedIds(archive: CampaignArchive, options: { userId: string; organizationId: string; authorizedSourceOffers?: ReadonlySet<string> }): CampaignArchive {
   const data = clonePlain(archive.data);
+  if (options.authorizedSourceOffers) {
+    for (const actor of data.actors) {
+      if (!options.authorizedSourceOffers.has(actor.id)) {
+        delete actor.characterClaimOffered;
+        delete actor.characterClaimOfferedByUserId;
+      }
+    }
+  }
   const idMap = new Map<string, string>();
   for (const collection of regeneratableArchiveCollections) {
     for (const record of data[collection] as Array<{ id?: string }>) {

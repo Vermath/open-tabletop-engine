@@ -136,6 +136,16 @@ describe("campaign player character claims", () => {
         expect(await options(player.headers)).toEqual([]);
         const claim = (key: string) => app.inject({ method: "POST", url: routes.characterClaim(campaignId, actor.id), headers: { ...player.headers, ...mutation(key) }, payload: { expectedUpdatedAt: actor.updatedAt } });
         expect((await claim("assistant-revoked")).statusCode).toBe(409);
+        const campaign = store.state.campaigns.find((entry) => entry.id === campaignId)!;
+        const copy = await app.inject({ method: "POST", url: routes.campaignDuplicate(campaignId), headers: { ...gm, ...mutation("copy-revoked-offer") }, payload: { expectedUpdatedAt: campaign.updatedAt } });
+        expect(copy.statusCode, copy.body).toBe(201);
+        const copyId = copy.json().campaign.id as string;
+        const copyPlayer = await acceptPlayer(app, "copy-after-revocation", "player", copyId);
+        const copiedActor = store.state.actors.find((entry) => entry.campaignId === copyId && entry.name === actor.name)!;
+        expect(copiedActor.characterClaimOffered).toBeUndefined();
+        expect((await app.inject({ url: routes.characterClaims(copyId), headers: copyPlayer.headers })).json()).toEqual([]);
+        const copyClaim = await app.inject({ method: "POST", url: routes.characterClaim(copyId, copiedActor.id), headers: { ...copyPlayer.headers, ...mutation("copy-revoked-claim") }, payload: { expectedUpdatedAt: copiedActor.updatedAt } });
+        expect(copyClaim.statusCode).toBe(409);
         actor.permissions[assistant.userId] = ["actor.readPrivate"];
         store.state.members.find((member) => member.userId === assistant.userId && member.campaignId === campaignId)!.role = "observer";
         expect((await claim("assistant-demoted")).statusCode).toBe(409);
