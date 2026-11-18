@@ -100,6 +100,10 @@ export const routes = {
     `/api/v1/campaigns/${pathPart(campaignId)}/ownership-transfer`,
   campaignDuplicate: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/duplicate`,
+  partyRollRequests: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/party-roll-requests`,
+  partyRollChoices: (campaignId: string) => `/api/v1/campaigns/${pathPart(campaignId)}/party-roll-requests/choices`,
+  answerPartyRoll: (campaignId: string, requestId: string, actorId: string) =>
+    `/api/v1/campaigns/${pathPart(campaignId)}/party-roll-requests/${pathPart(requestId)}/actors/${pathPart(actorId)}/roll`,
   characterTransfers: (campaignId: string) =>
     `/api/v1/campaigns/${pathPart(campaignId)}/character-transfers`,
   characterTransferCreate: (campaignId: string, actorId: string) =>
@@ -780,6 +784,9 @@ const endpointSpecs = [
   ["DELETE", "/api/v1/campaigns/{campaignId}/members/{memberId}"],
   ["POST", "/api/v1/campaigns/{campaignId}/ownership-transfer"],
   ["POST", "/api/v1/campaigns/{campaignId}/duplicate"],
+  ["GET", "/api/v1/campaigns/{campaignId}/party-roll-requests/choices"],
+  ["POST", "/api/v1/campaigns/{campaignId}/party-roll-requests"],
+  ["POST", "/api/v1/campaigns/{campaignId}/party-roll-requests/{requestId}/actors/{actorId}/roll"],
   ["GET", "/api/v1/campaigns/{campaignId}/character-transfers"],
   ["POST", "/api/v1/campaigns/{campaignId}/actors/{actorId}/transfers"],
   ["POST", "/api/v1/campaigns/{campaignId}/character-transfers/{transferId}/accept"],
@@ -5276,6 +5283,7 @@ const componentSchemas = {
       assets: arrayOf(schemaRef("MapAsset")),
       actors: arrayOf(schemaRef("Actor")),
       calculationOverrides: arrayOf(schemaRef("CalculationOverride")),
+      partyRollRequests: arrayOf(schemaRef("PartyRollRequest")),
       characterTransfers: arrayOf(schemaRef("CharacterTransfer")),
       items: arrayOf(schemaRef("Item")),
       journals: arrayOf(schemaRef("JournalEntry")),
@@ -5306,6 +5314,26 @@ const componentSchemas = {
       rulesProfile: schemaRef("CampaignRulesProfile"),
     },
   },
+  PartyRollChoice: {
+    type: "object", required: ["actorId", "actorName", "rolls"],
+    properties: { actorId: idSchema, actorName: { type: "string" }, rolls: arrayOf({
+      type: "object", required: ["id", "label"], properties: { id: idSchema, label: { type: "string" } },
+    }) },
+  },
+  PartyRollRequest: {
+    type: "object", required: ["id", "campaignId", "rollId", "label", "recipients", "createdAt", "updatedAt"],
+    properties: {
+      ...idTimestampProperties, campaignId: idSchema, rollId: idSchema, label: { type: "string" },
+      recipients: arrayOf({
+        type: "object", required: ["actorId", "actorName", "userId"],
+        properties: {
+          actorId: idSchema, actorName: { type: "string" }, userId: idSchema, unavailable: { type: "boolean" },
+          result: { type: "object", required: ["id", "formula", "total"], properties: { id: idSchema, formula: { type: "string" }, total: { type: "number" } } },
+        },
+      }),
+    },
+  },
+  PartyRollReceipt: { type: "object", required: ["id"], properties: { id: idSchema } },
   CharacterTransfer: {
     type: "object",
     additionalProperties: false,
@@ -14156,6 +14184,19 @@ const routeOperationOverrides: Record<string, Partial<OpenApiOperation>> = {
       "409": jsonResponse("Source campaign revision conflict", schemaRef("ErrorResponse")),
       "413": jsonResponse("Campaign assets exceed the configured duplication limit", schemaRef("ErrorResponse")),
     },
+  },
+  "GET /api/v1/campaigns/{campaignId}/party-roll-requests/choices": {
+    responses: { "200": jsonResponse("Player characters and available sheet checks", arrayOf(schemaRef("PartyRollChoice"))) },
+  },
+  "POST /api/v1/campaigns/{campaignId}/party-roll-requests": {
+    parameters: [{ name: "Idempotency-Key", in: "header", required: true, schema: { type: "string", minLength: 1, maxLength: 160 } }],
+    requestBody: jsonRequestBody({ type: "object", required: ["rollId", "actorIds"], properties: {
+      rollId: idSchema, actorIds: { type: "array", items: idSchema, minItems: 1, maxItems: 100, uniqueItems: true },
+    } }),
+    responses: { "201": jsonResponse("Created party roll request ID", schemaRef("PartyRollReceipt")) },
+  },
+  "POST /api/v1/campaigns/{campaignId}/party-roll-requests/{requestId}/actors/{actorId}/roll": {
+    responses: { "200": jsonResponse("Recorded roll ID, including on retry", schemaRef("PartyRollReceipt")) },
   },
   "GET /api/v1/campaigns/{campaignId}/character-transfers": {
     responses: { "200": jsonResponse("Visible pending and resolved character transfers", arrayOf(schemaRef("CharacterTransfer"))) },

@@ -81,6 +81,7 @@ import {
   type EncounterMonsterPlacementBatchInput,
   type EncounterMonsterPlacementBatchResult,
   type EncounterMonsterPlacementResult,
+  type PartyRollRequest,
   type EngineEvent,
   type EngineState,
   type FogHistoryEntry,
@@ -341,6 +342,7 @@ import { activeCombatForTypedDamage, dndTypedDamageCombatantChanges } from "./dn
 import { registerSceneDelegationRoutes } from "./scene-delegation-routes.js";
 import { exceedsSceneVisionBudget, MAX_SCENE_LIGHTS, MAX_SCENE_WALLS, SceneVisionBudgetError } from "./scene-vision-budget.js";
 import { registerUniversalVttImportRoute } from "./universal-vtt-import.js";
+import { partyRollForUser, registerPartyRollRoutes } from "./party-roll-routes.js";
 import { registerCampaignSessionRoutes } from "./campaign-session-routes.js";
 import { registerCampaignWebhookRoutes } from "./campaign-webhook-routes.js";
 import { CAMPAIGN_WEBHOOK_QUEUE_MAX_PENDING_DELIVERIES, CAMPAIGN_WEBHOOK_SUBSCRIPTION_LIMIT_PER_CAMPAIGN, createCampaignWebhookDelivery, pruneCampaignWebhookCampaignLedger, pruneCampaignWebhookDeliveryLedger, pruneCampaignWebhookLedgers } from "./campaign-webhook-ledger.js";
@@ -3677,6 +3679,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!sessionCookieDeferred(request.headers)) attachSessionCookie(reply, outcome.sessionToken, outcome.session);
     else markSessionCookieDeferred(reply);
     return { token: outcome.sessionToken, session: publicSession(outcome.session), user: outcome.user, serverAdmin: outcome.serverAdmin, invite: outcome.invite, membership: publicCampaignMember(outcome.membership), campaign: outcome.campaign };
+  });
+
+  registerPartyRollRoutes(app, {
+    store, broadcast, nextRevisionTimestamp,
+    requirePermission: (reply, headers, campaignId, permission) => requireCampaignPermission(store, reply, headers, campaignId, permission),
+    currentUserId: (headers) => currentUserId(store, headers)!,
+    quickRolls: (actor) => systemQuickRollsForStore(store, actor, actorItems(store, actor)),
   });
 
   registerCampaignSessionRoutes(app, {
@@ -22011,6 +22020,11 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
   if (event.type.startsWith("campaign.member.") && isRecord(event.payload) && "source" in event.payload && !canCampaign(store, userId, event.campaignId, "campaign.update")) {
     return redactedRealtimeEvent(event, publicCampaignMember(event.payload));
   }
+  if (event.type === "partyRoll.updated") {
+    const request = store.state.partyRollRequests.find((entry) => entry.id === event.targetId && entry.campaignId === event.campaignId);
+    const visible = request && partyRollForUser(store, userId, request);
+    return visible ? redactedRealtimeEvent(event, visible) : undefined;
+  }
   if (event.type === "agent.boardCaptureRequested") {
     const payload = isRecord(event.payload) ? event.payload : {};
     return payload.userId === userId ? event : undefined;
@@ -24031,6 +24045,7 @@ interface CampaignSnapshotResult {
   campaign: Campaign;
   members: ReturnType<typeof memberSessionInfo>[];
   presences?: CampaignPresence[];
+  partyRollRequests: PartyRollRequest[];
   campaignSessions: CampaignSession[];
   worlds: World[];
   worldRecords: WorldRecord[];
@@ -24159,6 +24174,7 @@ function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Camp
     user: publicUser(store.state.users.find((candidate) => candidate.id === userId)!),
     campaign,
     members: campaignMemberList(store, campaignId, canManage),
+    partyRollRequests: store.state.partyRollRequests.filter((entry) => entry.campaignId === campaignId).flatMap((entry) => partyRollForUser(store, userId, entry) ?? []),
     campaignSessions: store.state.campaignSessions.filter((session) => session.campaignId === campaignId && (canViewPrep || session.status === "live")).map((session) => (canViewPrep ? session : { ...session, agenda: "", notes: "", encounterIds: session.encounterIds.filter((encounterId) => store.state.combats.some((combat) => combat.active && combat.campaignId === campaignId && combat.encounterId === encounterId)), sceneIds: session.sceneIds.filter((sceneId) => scenes.some((scene) => scene.id === sceneId)) })),
     worlds: canWorld ? store.state.worlds.filter((world) => world.campaignId === campaignId) : [],
     worldRecords: readableWorldRecords,
@@ -25623,6 +25639,7 @@ function removeCampaignRecords(store: StateStore, campaignId: string): void {
   store.state.diceMacros = store.state.diceMacros.filter((item) => item.campaignId !== campaignId);
   store.state.audioTracks = store.state.audioTracks.filter((item) => item.campaignId !== campaignId);
   store.state.encounters = store.state.encounters.filter((item) => item.campaignId !== campaignId);
+  store.state.partyRollRequests = store.state.partyRollRequests.filter((entry) => entry.campaignId !== campaignId);
   store.state.campaignSessions = store.state.campaignSessions.filter((item) => item.campaignId !== campaignId);
   store.state.combats = store.state.combats.filter((item) => item.campaignId !== campaignId);
   store.state.proposals = store.state.proposals.filter((item) => item.campaignId !== campaignId);

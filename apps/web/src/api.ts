@@ -1,6 +1,6 @@
 import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AudioTrack, AuditLog, CalculationOverride, Campaign, CampaignMember, CampaignPresence, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, DiceRollFairness, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SystemManifestSchemas, SystemManifestIdentity, DeclarativeSystemDefinition, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot, WorldRecord, WorldRelation } from "@open-tabletop/core";
 import { ApiCompatibilityError, apiBuildFingerprintIssue, apiCompatibilityIssue, type ApiHealthIdentity } from "./api-compatibility.js";
-import type { AdminAiThreadSummary, AdminAiToolCallSummary, UniversalVttImportInput, UniversalVttImportResult } from "@open-tabletop/api-contracts";
+import type { PartyRollRequest, AdminAiThreadSummary, AdminAiToolCallSummary, UniversalVttImportInput, UniversalVttImportResult } from "@open-tabletop/api-contracts";
 
 export type { UniversalVttImportInput, UniversalVttImportResult } from "@open-tabletop/api-contracts";
 
@@ -721,6 +721,7 @@ export interface Snapshot {
   diceMacros: DiceMacro[];
   audioTracks: AudioTrack[];
   encounters: Encounter[];
+  partyRollRequests?: PartyRollRequest[];
   campaignSessions?: CampaignSessionInfo[];
   combats: Combat[];
   combatAudit: AuditLog[];
@@ -765,6 +766,7 @@ interface CampaignSnapshotPayload {
   rolls: DiceRoll[];
   diceMacros: DiceMacro[];
   encounters: Encounter[];
+  partyRollRequests?: PartyRollRequest[];
   campaignSessions?: CampaignSessionInfo[];
   combats: Combat[];
   proposals: Proposal[];
@@ -3559,6 +3561,7 @@ export async function loadSnapshot(campaignId?: string, sceneId?: string): Promi
     diceMacros: campaignSnapshot.diceMacros,
     audioTracks: displayAudioTracks,
     encounters: campaignSnapshot.encounters,
+    partyRollRequests: campaignSnapshot.partyRollRequests ?? [],
     campaignSessions: campaignSnapshot.campaignSessions ?? [],
     combats: campaignSnapshot.combats,
     combatAudit,

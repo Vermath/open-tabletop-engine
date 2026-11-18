@@ -53,6 +53,7 @@ const routeSources = [
   { name: "archive-operations.ts", source: archiveOperationsSource },
   { name: "asset-operations.ts", source: assetOperationsSource },
   { name: "campaign-session-routes.ts", source: campaignSessionRoutesSource },
+  { name: "party-roll-routes.ts", source: readFileSync(new URL("./party-roll-routes.ts", import.meta.url), "utf8") },
   { name: "campaign-webhook-routes.ts", source: campaignWebhookRoutesSource },
   { name: "scene-delegation-routes.ts", source: sceneDelegationRoutesSource },
   { name: "dnd-monster-variant-routes.ts", source: dndMonsterVariantRoutesSource },
@@ -153,6 +154,7 @@ const OPERATOR_PROBE_KEYS = new Set([
 // cannot create a duplicate. Routes that derive from or update existing state
 // are deliberately absent and therefore require both key and exact revision.
 const APPEND_ONLY_IDEMPOTENCY_RULES: readonly RegExp[] = [
+  /^POST \/api\/v1\/campaigns\/:[^/]+\/party-roll-requests$/,
   /^POST \/api\/v1\/organizations$/,
   /^POST \/api\/v1\/campaigns$/,
   /^POST \/api\/v1\/campaigns\/:[^/]+\/invites$/,
@@ -170,6 +172,10 @@ const APPEND_ONLY_IDEMPOTENCY_RULES: readonly RegExp[] = [
 ];
 
 const SPECIALIZED_ROUTE_EVIDENCE: ReadonlyArray<{ pattern: RegExp; helper?: string; evidence: readonly string[] }> = [
+  {
+    pattern: /^POST \/api\/v1\/campaigns\/:[^/]+\/party-roll-requests\/:[^/]+\/actors\/:[^/]+\/roll$/,
+    evidence: ["currentPlayerCharacter", "if (row.result) return", "row.result =", "changed(entry)"]
+  },
   {
     pattern: /^POST \/api\/v1\/campaigns\/:[^/]+\/character-transfers\/:[^/]+\/(?:accept|decline|cancel)$/,
     helper: "resolveCharacterTransferRequest",
@@ -280,7 +286,8 @@ describe("non-AI mutation route contract", () => {
   const centralDescriptors = extractCentralGuardDescriptors(appSource);
 
   it("keeps the current mutation inventory explicit and classified", () => {
-    expect(routes).toHaveLength(259);
+    expect(routes).toHaveLength(261);
+    expect(routes.filter((route) => route.sourceName === "party-roll-routes.ts")).toHaveLength(2);
     expect(routes.filter((route) => route.sourceName === "app.ts")).toHaveLength(214);
     expect(routes.filter((route) => route.sourceName === "calculation-override-routes.ts")).toHaveLength(2);
     expect(routes.filter((route) => route.sourceName === "archive-operations.ts")).toHaveLength(0);

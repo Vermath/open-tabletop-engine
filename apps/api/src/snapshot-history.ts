@@ -12,10 +12,11 @@ export interface SnapshotHistoryMeta {
   collections: Record<string, SnapshotHistoryCollectionMeta>;
 }
 
-const TOP_LEVEL_HISTORY_COLLECTIONS = ["campaignSessions", "characterTransfers", "chat", "rolls", "combats", "proposals"] as const;
+const TOP_LEVEL_HISTORY_COLLECTIONS = ["partyRollRequests", "campaignSessions", "characterTransfers", "chat", "rolls", "combats", "proposals"] as const;
 const BUNDLED_HISTORY_COLLECTIONS = ["contentImports", "aiThreads", "aiToolCalls", "combatAudit"] as const;
 const ACTIONABLE_HISTORY_RECORD: Record<string, (record: Record<string, unknown>) => boolean> = {
   campaignSessions: (record) => record.status === "planned" || record.status === "live",
+  partyRollRequests: (record) => Array.isArray(record.recipients) && record.recipients.some((row) => !row.result && !row.unavailable),
   characterTransfers: (record) => record.status === "pending",
   combats: (record) => record.active === true,
   proposals: (record) => record.status === "draft" || record.status === "pending" || record.status === "approved",

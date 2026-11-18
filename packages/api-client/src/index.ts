@@ -23,6 +23,8 @@ import type {
   CampaignPresence,
   CampaignMember,
   CampaignSession,
+  PartyRollRequest,
+  PartyRollChoice,
   CharacterTransfer,
   CampaignWebhookDeliveryStatus,
   CampaignWebhookEnvelopeEventType,
@@ -651,6 +653,7 @@ export interface CampaignSnapshot {
   campaign: Campaign;
   members: CampaignSnapshotMember[];
   presences: CampaignPresence[];
+  partyRollRequests?: PartyRollRequest[];
   campaignSessions: CampaignSession[];
   worlds: World[];
   worldRecords: WorldRecord[];
@@ -3042,6 +3045,18 @@ export class OpenTabletopClient {
       undefined,
       { "Idempotency-Key": idempotencyKey },
     );
+  }
+
+  async partyRollChoices(campaignId: string): Promise<PartyRollChoice[]> {
+    return this.get(routes.partyRollChoices(campaignId));
+  }
+
+  async requestPartyRoll(campaignId: string, input: { rollId: string; actorIds: string[] }, idempotencyKey: string): Promise<{ id: string }> {
+    return this.post(routes.partyRollRequests(campaignId), input, { "Idempotency-Key": idempotencyKey });
+  }
+
+  async answerPartyRoll(campaignId: string, requestId: string, actorId: string): Promise<{ id: string }> {
+    return this.post(routes.answerPartyRoll(campaignId, requestId, actorId), {});
   }
 
   async campaignSessions(campaignId: string): Promise<CampaignSession[]> {

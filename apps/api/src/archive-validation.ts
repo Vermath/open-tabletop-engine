@@ -232,6 +232,9 @@ export function validateCampaignArchiveShape(
     const records = data[collection];
     if (records === undefined) continue;
     if (!Array.isArray(records)) return { ok: false, error: `Campaign archive ${collection} must be an array` };
+    if (collection === "partyRollRequests" && records.length > 0) {
+      return { ok: false, error: "Live party roll requests belong to the original table" };
+    }
     if (collection === "campaignArchiveImportOperations" && records.length > 0) {
       return { ok: false, error: "Campaign archive operational recovery data is not portable" };
     }
