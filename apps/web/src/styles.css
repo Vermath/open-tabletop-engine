@@ -15051,7 +15051,7 @@ a:focus-visible {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--ink);
-  box-shadow: 0 3px 12px #0006;
+  box-shadow: var(--shadow-2);
 }
 
 .live-session-banner {

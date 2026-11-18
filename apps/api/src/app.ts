@@ -21205,7 +21205,7 @@ function isTokenOwnedByUser(store: StateStore, userId: string, token: Token): bo
 }
 
 function characterOfferIsAuthorized(store: StateStore, actor: Actor): boolean {
-  if (!actor.characterClaimOffered) return false;
+  if (actor.characterClaimOffered !== true) return false;
   // A starter-created offer belongs to the campaign owner.
   const managerId = actor.characterClaimOfferedByUserId ?? store.state.campaigns.find((campaign) => campaign.id === actor.campaignId)?.ownerUserId;
   return Boolean(managerId && isActiveUserId(store, managerId) && isCharacterClaimManager(store, actor.campaignId, managerId)

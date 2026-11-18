@@ -438,6 +438,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   if (path === "/api/v1/campaigns/{campaignId}/duplicate") return { excluded: "campaign_lifecycle" };
   if (path.endsWith("/scene-duplications")) return { excluded: "human_confirmed_scene_duplication" };
   if (path.includes("/archive-import-operations")) return { excluded: "human_confirmed_archive_recovery" };
+  if (path.endsWith("/character-claims") || path.endsWith("/claim-offer") || path.endsWith("/actors/{actorId}/claim")) return { excluded: "human_character_ownership_lifecycle" };
   if (path.includes("/character-transfers")) return { excluded: "human_character_ownership_lifecycle" };
   if (path.endsWith("/ownership-transfer")) return { excluded: "campaign_member_admin" };
   if (path.includes("/webhooks")) return { excluded: "human_campaign_integration_admin" };
@@ -12431,6 +12432,9 @@ describe("api", () => {
       { method: "POST", url: "/api/v1/campaigns/camp_demo/ownership-transfer", payload: { targetUserId: "usr_demo_player", expectedUpdatedAt: "2026-07-13T00:00:00.000Z" } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/duplicate", headers: { "idempotency-key": "auth-matrix-campaign-duplicate" }, payload: { name: "Auth Matrix Copy", expectedUpdatedAt: store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/scene-duplications", headers: { "idempotency-key": "auth-matrix-scene-duplication" }, payload: { operationId: "auth-matrix-scene-duplication", expectedUpdatedAt: "2020-01-01T00:00:00.000Z", sources: [{ sceneId: "scn_vault_entry", expectedUpdatedAt: "2020-01-01T00:00:00.000Z" }], dryRun: true } },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/character-claims" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/actors/act_valen/claim-offer", headers: { "idempotency-key": "auth-matrix-character-offer" }, payload: { offered: true, expectedUpdatedAt: "2026-05-01T00:00:00.000Z" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/actors/act_valen/claim", headers: { "idempotency-key": "auth-matrix-character-claim" }, payload: { expectedUpdatedAt: "2026-05-01T00:00:00.000Z" } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/character-transfers" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/actors/act_valen/transfers", headers: { "idempotency-key": "auth-matrix-character-transfer-create" }, payload: { toUserId: "usr_demo_player", expectedUpdatedAt: store.state.actors.find((actor) => actor.id === "act_valen")!.updatedAt } },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/character-transfers/charxfer_auth_matrix_accept/accept", headers: { "idempotency-key": "auth-matrix-character-transfer-accept" }, payload: { expectedUpdatedAt: "2026-05-01T00:00:00.000Z" } },
@@ -13359,6 +13363,8 @@ describe("api", () => {
       ["POST /api/v1/scenes/{sceneId}/compendium-monster-placements", 409],
       ["POST /api/v1/scenes/{sceneId}/compendium-monster-placements/{placementId}/history", 409],
       ["POST /api/v1/scenes/{sceneId}/encounter-monster-placements", 409],
+      ["POST /api/v1/campaigns/{campaignId}/actors/{actorId}/claim-offer", 409],
+      ["POST /api/v1/campaigns/{campaignId}/actors/{actorId}/claim", 403],
       ["POST /api/v1/campaigns/{campaignId}/actors/{actorId}/transfers", 201],
       ["POST /api/v1/campaigns/{campaignId}/character-transfers/{transferId}/accept", 404],
       ["POST /api/v1/campaigns/{campaignId}/character-transfers/{transferId}/decline", 404],

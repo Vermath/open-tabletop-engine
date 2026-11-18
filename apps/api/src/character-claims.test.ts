@@ -1,6 +1,7 @@
 import { routes, type CharacterClaimOption } from "@open-tabletop/api-contracts";
 import * as core from "@open-tabletop/core";
 import { describe, expect, it, vi } from "vitest";
+import { secureArchiveIdentityForImport } from "./archive-operations.js";
 import { buildApp } from "./app.js";
 import { MemoryStateStore } from "./store.js";
 
@@ -19,9 +20,9 @@ function prepareRoster(store: MemoryStateStore) {
   return { actor, token };
 }
 
-async function acceptPlayer(app: Awaited<ReturnType<typeof buildApp>>, name: string, role: "player" | "observer" | "assistant_gm" = "player") {
+async function acceptPlayer(app: Awaited<ReturnType<typeof buildApp>>, name: string, role: "player" | "observer" | "assistant_gm" = "player", targetCampaignId = campaignId) {
   const email = `${name}@example.test`;
-  const invite = await app.inject({ method: "POST", url: `/api/v1/campaigns/${campaignId}/invites`, headers: { ...gm, ...mutation("invite-" + name) }, payload: { email, role } });
+  const invite = await app.inject({ method: "POST", url: `/api/v1/campaigns/${targetCampaignId}/invites`, headers: { ...gm, ...mutation("invite-" + name) }, payload: { email, role } });
   expect(invite.statusCode, invite.body).toBe(200);
   const accept = await app.inject({ method: "POST", url: "/api/v1/invites/accept", headers: mutation("accept-" + name), payload: {
     email, displayName: name, password: "strong password for this test", token: invite.json().token, expectedUpdatedAt: invite.json().invite.updatedAt
@@ -141,6 +142,48 @@ describe("campaign player character claims", () => {
         expect(actor.ownerUserId).toBeUndefined();
       } finally { permissions.mockRestore(); }
     } finally { await app.close(); }
+  });
+
+  it("copies starter and GM-authored offers under the new campaign owner", async () => {
+    const store = new MemoryStateStore();
+    const { actor, token } = prepareRoster(store);
+    const app = await buildApp({ store });
+    try {
+      const assistant = await acceptPlayer(app, "copy-offer-gm", "assistant_gm");
+      actor.characterClaimOffered = true; // Starter characters have no individual offering manager.
+      const explicit = { ...structuredClone(actor), id: "act_explicit_offer", name: "Assistant's character", ownerUserId: assistant.userId, characterClaimOfferedByUserId: assistant.userId };
+      store.state.actors.push(explicit);
+      store.state.tokens.push({ ...structuredClone(token), id: "explicit-offer-token", actorId: explicit.id, ownerUserIds: [assistant.userId] });
+      const campaign = store.state.campaigns.find((entry) => entry.id === campaignId)!;
+      const copy = await app.inject({ method: "POST", url: routes.campaignDuplicate(campaignId), headers: { ...gm, ...mutation("duplicate-offered") }, payload: { name: "Copied offers", expectedUpdatedAt: campaign.updatedAt } });
+      expect(copy.statusCode, copy.body).toBe(201);
+      const copyId = copy.json().campaign.id as string;
+      const player = await acceptPlayer(app, "copy-offer-player", "player", copyId);
+      const options = (await app.inject({ url: routes.characterClaims(copyId), headers: player.headers })).json() as CharacterClaimOption[];
+      expect(options.map((entry) => entry.name).sort()).toEqual([actor.name, explicit.name].sort());
+      const choice = options.find((entry) => entry.name === explicit.name)!;
+      const claim = await app.inject({ method: "POST", url: routes.characterClaim(copyId, choice.actorId), headers: { ...player.headers, ...mutation("claim-copy") }, payload: { expectedUpdatedAt: choice.updatedAt } });
+      expect(claim.statusCode, claim.body).toBe(200);
+      expect(store.state.tokens.find((entry) => entry.id === claim.json().tokenId)?.ownerUserIds).toEqual([player.userId]);
+      expect(explicit.ownerUserId).toBe(assistant.userId);
+    } finally { await app.close(); }
+  });
+
+  it("restores existing campaign offers from local authority and discards foreign offers", () => {
+    const store = new MemoryStateStore();
+    const { actor } = prepareRoster(store);
+    const archive = structuredClone(core.makeArchive(store.state, campaignId));
+    const archivedActor = archive.data.actors.find((entry) => entry.id === actor.id)!;
+    archivedActor.characterClaimOffered = true;
+    archivedActor.characterClaimOfferedByUserId = "absent-manager";
+    const campaign = store.state.campaigns.find((entry) => entry.id === campaignId)!;
+    const restored = () => secureArchiveIdentityForImport(store.state, archive, { userId: campaign.ownerUserId, organizationId: campaign.organizationId! }).data.actors.find((entry) => entry.id === actor.id)!;
+    expect(restored().characterClaimOffered).toBeUndefined();
+    actor.characterClaimOffered = true;
+    actor.characterClaimOfferedByUserId = campaign.ownerUserId;
+    expect(restored().characterClaimOfferedByUserId).toBe(campaign.ownerUserId);
+    archivedActor.ownerUserId = "usr_demo_player";
+    expect(restored().characterClaimOffered).toBeUndefined();
   });
 
   it("withdraws offers and rechecks token eligibility at claim time", async () => {
