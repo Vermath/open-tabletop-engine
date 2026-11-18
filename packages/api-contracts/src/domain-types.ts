@@ -266,6 +266,14 @@ export interface WorldRelation extends Timestamps {
   updatedByUserId: ID;
 }
 
+export interface SceneMapPin extends VisionPoint {
+  id: ID;
+  label: string;
+  targetType: "journal" | "handout";
+  targetId: ID;
+  audience: "gm" | "readers";
+}
+
 export interface Scene extends Timestamps {
   id: ID;
   campaignId: ID;
@@ -290,6 +298,7 @@ export interface Scene extends Timestamps {
   walls: Wall[];
   lights: LightSource[];
   annotations: SceneAnnotation[];
+  mapPins?: SceneMapPin[];
   /** Explicitly authored movement-cost areas. Missing on legacy scenes. */
   difficultTerrain?: DifficultTerrainRegion[];
   /** GM-authored cover rulings between a source and target token. Missing on legacy scenes. */

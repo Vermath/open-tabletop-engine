@@ -8,7 +8,7 @@ const MemoizedSceneCanvas = memoWithEventProps(SceneCanvas, [
   "onCalibrationPoint", "onSelect", "onInspectToken", "onSelectMany", "onSelectBackgroundAsset",
   "onClearSelection", "onMoved", "onTokenMovePersist", "onTokenResizePersist",
   "onTokenResizeCommit", "onTokenLayerCycle", "onTokenDrop", "onFogStroke", "onAnnotationCreate",
-  "onAnnotationMove", "onTogglePortal", "onSetLightAnimation", "onSelectOverlay", "onZoomBy", "onTokenTarget",
+  "onAnnotationMove", "onTogglePortal", "onSetLightAnimation", "onSelectOverlay", "onZoomBy", "onTokenTarget", "onSavePin",
 ]);
 const MemoizedMapLayerStack = memoWithEventProps(MapLayerStack, ["onSelectTokenLayer", "onToggleAnnotationLayer"]);
 

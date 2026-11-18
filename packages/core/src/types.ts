@@ -36,6 +36,7 @@ export type {
   WorldRelationType,
   WorldRelation,
   Scene,
+  SceneMapPin,
   SceneDuplicationSource,
   SceneDuplicationRequest,
   SceneDuplicationCopyCollection,

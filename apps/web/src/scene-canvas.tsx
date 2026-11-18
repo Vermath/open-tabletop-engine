@@ -22,6 +22,8 @@ import { useInterfacePresence } from "./interface-presence.js";
 import { preferredMapRenderer, useBoardCanvasLayers } from "./board-canvas-layers.js";
 import { BoardDarknessLayer, BoardDifficultTerrainLayer, BoardLightingLayer, BoardStructureHandles, BoardVisionMaskLayer, BoardWallLayer, type BoardStructureHandlers } from "./board-layers.js";
 import { useStableHandlers, useStructurallyStable } from "./board-render-stability.js";
+import { readPinDrag, scenePinMime } from "./scene-pin-drag.js";
+import { ScenePinDialog, ScenePinMarkers, type PinSelection, type ScenePinProps } from "./scene-map-pins.js";
 import { BoardToken, type BoardTokenHandlers } from "./board-token.js";
 
 export { lightPolygonClassName, polygonPoints, visionPolygonClassName } from "./board-layers.js";
@@ -511,7 +513,7 @@ export const tokenResizeHandles: Array<{ id: TokenResizeHandle; label: string }>
 export const tokenCornerResizeHandles = tokenResizeHandles.filter((handle) => handle.id.length === 2);
 
 
-export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; actors: Actor[]; boardCurrentUserId: string; canSeeAllVitals: boolean; currentTurnTokenIds: string[]; nextTurnTokenIds: string[]; vision?: VisionSnapshot; visionPreviewLabel?: string; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; calibrationPoints?: VisionPoint[]; onCalibrationPoint?(point: VisionPoint): void; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canMoveToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; canUpdateTokenLayer: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onInspectToken(id: string): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMovePersist(changes: TokenMovePersistenceChange[]): Promise<void>; onTokenResizePersist(token: Token, frame: TokenFrame): Promise<void>; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenLayerCycle(token: Token): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; onTogglePortal(wall: Scene["walls"][number], toggleLock?: boolean): Promise<void>; onSetLightAnimation?(lightId: string, animation: NonNullable<Scene["lights"][number]["animation"]>): void; selectedOverlay: { type: "annotation" | "wall" | "light"; id: string } | null; onSelectOverlay(next: { type: "annotation" | "wall" | "light"; id: string } | null): void; onZoomBy(delta: number): void; onTokenTarget?(tokenId: string, targeted: boolean): void | Promise<void> }) {
+export function SceneCanvas(props: ScenePinProps & { readOnly?: boolean; scene: Scene; zoom: number; backgroundAsset?: MapAsset; selectedAssetId?: string; assets: MapAsset[]; tokens: Token[]; actors: Actor[]; boardCurrentUserId: string; canSeeAllVitals: boolean; currentTurnTokenIds: string[]; nextTurnTokenIds: string[]; vision?: VisionSnapshot; visionPreviewLabel?: string; selectedTokenId: string; selectedTokenIds: string[]; activeTokenLayer: TokenLayer; fogBrushMode: FogMode | null; annotationTool: AnnotationTool; calibrationPoints?: VisionPoint[]; onCalibrationPoint?(point: VisionPoint): void; templateShape: SceneTemplateShape; visibleAnnotationLayers: Record<SceneAnnotationLayer, boolean>; canDropToken: boolean; canMoveToken: boolean; canUpdateAnnotations: boolean; canResizeToken: boolean; canUpdateTokenLayer: boolean; onSelect(id: string, options?: TokenSelectionOptions): void; onInspectToken(id: string): void; onSelectMany(ids: string[], options?: TokenSelectionOptions): void; onSelectBackgroundAsset(assetId: string): void; onClearSelection(): void; onMoved(): Promise<void>; onTokenMovePersist(changes: TokenMovePersistenceChange[]): Promise<void>; onTokenResizePersist(token: Token, frame: TokenFrame): Promise<void>; onTokenResizeCommit(changes: BoardTokenFrameChange[]): void; onTokenLayerCycle(token: Token): Promise<void>; onTokenDrop(payload: TokenDropPayload, point: VisionPoint): Promise<void>; onFogStroke(mode: FogMode, points: VisionPoint[]): Promise<void>; onAnnotationCreate(kind: SceneAnnotationKind, points: VisionPoint[], radius?: number): Promise<void>; onAnnotationMove(annotation: SceneAnnotation, points: VisionPoint[]): Promise<void>; onTogglePortal(wall: Scene["walls"][number], toggleLock?: boolean): Promise<void>; onSetLightAnimation?(lightId: string, animation: NonNullable<Scene["lights"][number]["animation"]>): void; selectedOverlay: { type: "annotation" | "wall" | "light"; id: string } | null; onSelectOverlay(next: { type: "annotation" | "wall" | "light"; id: string } | null): void; onZoomBy(delta: number): void; onTokenTarget?(tokenId: string, targeted: boolean): void | Promise<void> }) {
   boardRenderCounts.scene += 1;
   const [showTokenNames, setShowTokenNames] = useState(false);
   useEffect(() => {
@@ -619,6 +621,8 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
   // A reconciled snapshot arrives as new objects even when nothing changed; keep the old references then, so the memoised layers below skip.
   const vision = useStructurallyStable(props.vision?.sceneId === props.scene.id ? props.vision : undefined);
   const sceneWalls = useStructurallyStable(props.scene.walls);
+  const [pinSelection, selectPin] = useState<PinSelection>();
+  useEffect(() => selectPin(undefined), [props.scene.id, props.boardCurrentUserId]);
   const sceneLights = useStructurallyStable(props.scene.lights);
   const difficultTerrain = useStructurallyStable(props.scene.difficultTerrain ?? noDifficultTerrain);
   const lightPolygons = useMemo(() => vision?.polygons.filter((polygon) => polygon.source === "light" && polygon.lightingEffect !== "darkness" && polygon.points.length > 2) ?? [], [vision]);
@@ -1644,6 +1648,8 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
       onPointerCancelCapture={(event) => handleViewportPointerEndCapture(event, true)}
       onContextMenu={(event) => event.preventDefault()}
     >
+      {props.onSavePin && <button className="ghost-button scene-pin-tools" type="button" onClick={() => selectPin({ kind: "add" })}>Place map pin</button>}
+      {pinSelection && <ScenePinDialog key={props.scene.id} {...props} selection={pinSelection} onClose={() => selectPin(undefined)} />}
       <RetryableActionNotice
         operation={mutationAction.operation}
         onRetry={mutationAction.retryAction ? () => void mutationAction.retryAction?.() : undefined}
@@ -1675,6 +1681,7 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
         setDropActive(true);
       }}
       onDragOver={(event) => {
+        if (props.onSavePin && event.dataTransfer.types.includes(scenePinMime)) { event.preventDefault(); event.dataTransfer.dropEffect = "copy"; return; }
         if (calibrationActive || !props.canDropToken || props.fogBrushMode || props.annotationTool || !hasTokenDropData(event.dataTransfer)) return;
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";
@@ -1686,6 +1693,13 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
       }}
       onDrop={(event) => {
         setDropActive(false);
+        const target = props.onSavePin && readPinDrag(event.dataTransfer);
+        if (target) {
+          event.preventDefault();
+          const point = boardPoint(event.clientX, event.clientY);
+          if (point) selectPin({ kind: "add", target, point });
+          return;
+        }
         if (calibrationActive || !props.canDropToken || props.fogBrushMode || props.annotationTool) return;
         const payload = readTokenDropData(event.dataTransfer);
         const point = boardPoint(event.clientX, event.clientY);
@@ -1800,6 +1814,7 @@ export function SceneCanvas(props: { readOnly?: boolean; scene: Scene; zoom: num
       {props.visionPreviewLabel && <div className="player-vision-preview-badge" role="status">Player vision: {props.visionPreviewLabel}</div>}
       {props.backgroundAsset && <img ref={mapImageRef} className="scene-map" src={assetBlobUrl(props.backgroundAsset)} alt="" draggable={false} />}
       {canvasLayers.mapCanvas}
+      <ScenePinMarkers scene={props.scene} onOpen={props.pinJournals ? (id) => selectPin({ kind: "open", id }) : undefined} />
       {props.calibrationPoints && props.calibrationPoints.length > 0 && (
         <svg className="grid-calibration-overlay" viewBox={`0 0 ${props.scene.width} ${props.scene.height}`} preserveAspectRatio="none" aria-hidden="true">
           {props.calibrationPoints.length === 2 && <line x1={props.calibrationPoints[0]!.x} y1={props.calibrationPoints[0]!.y} x2={props.calibrationPoints[1]!.x} y2={props.calibrationPoints[1]!.y} />}

@@ -3339,8 +3339,9 @@ export class OpenTabletopClient {
 
   async updateScene(
     sceneId: string,
-    input: Omit<Partial<Scene>, "worldId"> & {
+    input: Omit<Partial<Scene>, "worldId" | "mapPins"> & {
       worldId?: string | null;
+      mapPin?: NonNullable<Scene["mapPins"]>[number] | { remove: string };
       expectedUpdatedAt: string;
     },
     idempotencyKey: string,
