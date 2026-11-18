@@ -13,6 +13,8 @@ docker compose --env-file .env config --quiet
 docker compose up --build
 ```
 
+Compose builds its MinIO image from the upstream Linux releases for amd64, arm64, and ppc64le. The first build downloads the binaries from GitHub and the digest-pinned base from Red Hat. It checks each binary against the SHA-256 digest committed for that architecture. Existing installations can run `docker compose up --build` with their usual project name and `.env` to reopen the `minio-data` volume with the same credentials. [MinIO server release](https://github.com/minio/minio/releases/tag/RELEASE.2025-04-22T22-12-26Z) · [MinIO client release](https://github.com/minio/mc/releases/tag/RELEASE.2025-04-16T18-13-26Z)
+
 `compose:env:init` creates a gitignored `.env` with independent random asset-signing and MinIO credentials, the explicit loopback-only HTTP exceptions used by this profile, same-origin browser settings, and daily SQLite backup scheduling. It sets mode `0600` on POSIX; on Windows it removes inherited access rules and grants the current account access. The Compose file refuses to use a known fallback object-store password. The initializer refuses to overwrite an existing `.env`; use `-- --force` only when you intentionally want to rotate and replace the local configuration. Never reuse this local `.env` for an internet-facing deployment.
 
 Public self-registration is disabled by default. To allow account creation without an invite, set `OTTE_PUBLIC_REGISTRATION=true` in `.env` and recreate the API service. Leave it `false` for invite-only or internet-facing installations unless open registration is intentional.

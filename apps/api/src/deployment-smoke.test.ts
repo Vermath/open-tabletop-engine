@@ -208,10 +208,33 @@ describe("deployment smoke", () => {
     }
 
     const compose = readWorkspaceFile("docker-compose.yml");
-    expect(compose).toMatch(
-      /image: minio\/minio:RELEASE\.[^@\s]+@sha256:[0-9a-f]{64}/,
+    expect(compose).toContain("context: ./infra/docker");
+    expect(compose).toContain("dockerfile: minio.Dockerfile");
+    const storageImage = readWorkspaceFile("infra/docker/minio.Dockerfile");
+    expect(storageImage).toContain("minio-checksums/${TARGETARCH}.sha256");
+    expect(storageImage).toContain(
+      "sha256sum --strict --check /tmp/release.sha256",
     );
-    expect(compose).not.toContain("minio/minio:latest");
+    for (const arch of ["amd64", "arm64", "ppc64le"]) {
+      const checksums = readWorkspaceFile(
+        `infra/docker/minio-checksums/${arch}.sha256`,
+      );
+      const files = checksums
+        .trim()
+        .split(/\r?\n/)
+        .map((line) => {
+          expect(line).toMatch(/^[a-f0-9]{64}  \S+$/);
+          return line.slice(66);
+        });
+      expect(files.sort()).toEqual([
+        "mc",
+        "mc.minisig",
+        "mc.sha256sum",
+        "minio",
+        "minio.minisig",
+        "minio.sha256sum",
+      ]);
+    }
     expect(compose).toContain("dockerfile: infra/docker/api.Dockerfile");
     expect(compose).toContain("dockerfile: infra/docker/web.Dockerfile");
     expect(compose).toContain("dockerfile: infra/docker/worker.Dockerfile");

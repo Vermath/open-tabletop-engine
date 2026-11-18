@@ -27,8 +27,15 @@ token_hash=$(printf '%s' "$OTTE_WORKER_TOKEN" | sha256sum | cut -d' ' -f1)
 OTTE_WORKER_TOKEN_HASHES="$OTTE_WORKER_ID=sha256:$token_hash"
 export OTTE_WORKER_TOKEN OTTE_WORKER_TOKEN_HASHES
 
-"${compose[@]}" build api web worker
+"${compose[@]}" build minio api web worker
 "${compose[@]}" up -d --wait --wait-timeout 180 api web
+"${compose[@]}" exec -T minio sh -ec '
+  mc alias set smoke http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
+  mc mb smoke/otte-storage-probe
+  printf %s storage-roundtrip | mc pipe smoke/otte-storage-probe/probe.txt
+  test "$(mc cat smoke/otte-storage-probe/probe.txt)" = storage-roundtrip
+'
+echo "Packaged MinIO passed the authenticated object write and read"
 api_address=$("${compose[@]}" port api 4000)
 web_address=$("${compose[@]}" port web 80)
 node --input-type=module - "$api_address" "$web_address" <<'JS'
