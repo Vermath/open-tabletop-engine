@@ -2429,6 +2429,22 @@ export interface AiThread extends Timestamps {
   usage?: AiUsageMetrics;
 }
 
+/** Server-wide diagnostics expose only operational fields from campaign threads. */
+export type AdminAiThreadSummary = Pick<AiThread,
+  | "id" | "campaignId" | "provider" | "status" | "startedAt" | "completedAt" | "failedAt"
+  | "durationMs" | "retryAttempts" | "eventCount" | "toolCallCount" | "usage" | "createdAt" | "updatedAt"
+> & { campaignName?: string };
+
+export type AdminAiToolCallSummary = Pick<AiToolCall,
+  "id" | "threadId" | "toolName" | "status" | "durationMs" | "retry" | "createdAt" | "updatedAt"
+> & {
+  campaignId?: ID;
+  campaignName?: string;
+  provider?: string;
+  threadStatus?: AiThread["status"];
+  error?: string;
+};
+
 export type AiSourceKind =
   | "official_open_rules"
   | "campaign_canon"

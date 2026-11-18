@@ -1,6 +1,6 @@
 import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AudioTrack, AuditLog, CalculationOverride, Campaign, CampaignMember, CampaignPresence, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, DiceRollFairness, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SystemManifestSchemas, SystemManifestIdentity, DeclarativeSystemDefinition, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot, WorldRecord, WorldRelation } from "@open-tabletop/core";
 import { ApiCompatibilityError, apiBuildFingerprintIssue, apiCompatibilityIssue, type ApiHealthIdentity } from "./api-compatibility.js";
-import type { UniversalVttImportInput, UniversalVttImportResult } from "@open-tabletop/api-contracts";
+import type { AdminAiThreadSummary, AdminAiToolCallSummary, UniversalVttImportInput, UniversalVttImportResult } from "@open-tabletop/api-contracts";
 
 export type { UniversalVttImportInput, UniversalVttImportResult } from "@open-tabletop/api-contracts";
 
@@ -1308,7 +1308,6 @@ export interface AdminAiOperations {
     recentUnevaluatedThreads: Array<{
       id: string;
       campaignId: string;
-      title: string;
       provider: string;
       status?: AiThread["status"];
       createdAt: string;
@@ -1396,7 +1395,6 @@ export interface AdminAiOperations {
       campaignId?: string;
       campaignName?: string;
       provider?: string;
-      threadTitle?: string;
       threadStatus?: AiThread["status"];
       toolName: string;
       originalError?: string;
@@ -1483,7 +1481,6 @@ export interface AdminAiOperations {
     recentStaleRunningThreads: Array<{
       id: string;
       campaignId: string;
-      title: string;
       provider: string;
       startedAt?: string;
       ageMs: number;
@@ -1506,7 +1503,6 @@ export interface AdminAiOperations {
         campaignId: string;
         campaignName?: string;
         provider: string;
-        title: string;
         status: AiThread["status"];
         failedAt?: string;
         retryAttempts: number;
@@ -1537,7 +1533,6 @@ export interface AdminAiOperations {
         campaignId?: string;
         campaignName?: string;
         provider?: string;
-        threadTitle?: string;
         threadStatus?: AiThread["status"];
         toolName: string;
         error?: string;
@@ -1549,18 +1544,8 @@ export interface AdminAiOperations {
   };
   recentEvaluations: AiEvaluationRun[];
   campaigns: Array<AiUsageRollup & { campaignId: string; campaignName: string }>;
-  recentThreads: Array<Pick<AiThread, "id" | "campaignId" | "userId" | "provider" | "title" | "status" | "startedAt" | "completedAt" | "failedAt" | "durationMs" | "retryAttempts" | "eventCount" | "toolCallCount" | "providerError" | "usage" | "createdAt" | "updatedAt"> & { campaignName?: string }>;
-  recentToolCalls: Array<
-    Omit<AiToolCall, "input" | "output"> & {
-      /** Only the tool's error code, never its full output. */
-      output?: { error: string };
-      campaignId?: string;
-      campaignName?: string;
-      provider?: string;
-      threadTitle?: string;
-      threadStatus?: AiThread["status"];
-    }
-  >;
+  recentThreads: AdminAiThreadSummary[];
+  recentToolCalls: AdminAiToolCallSummary[];
 }
 
 export interface AdminAiProposalReviewInfo {
