@@ -9,8 +9,8 @@ const functionalColor = /^(?:rgb|rgba|hsl|hsla)\(\s*[\d.]+(?:deg|%)?(?:\s*[,\s/]
  * colour values are allowed through, so a crafted value cannot add extra
  * gradient layers or url() requests.
  */
-export function safeLightCssColor(color: string | undefined, kind?: string): string {
-  const trimmed = color?.trim() ?? "";
+export function safeLightCssColor(color: unknown, kind?: string): string {
+  const trimmed = typeof color === "string" ? color.trim() : "";
   if (hexColor.test(trimmed) || functionalColor.test(trimmed)) return trimmed;
   return kind === "darkness" ? fallbackDarknessColor : fallbackLightColor;
 }

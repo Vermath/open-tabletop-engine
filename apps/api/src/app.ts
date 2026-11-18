@@ -7,7 +7,7 @@ import { basename, extname, resolve } from "node:path";
 import cors from "@fastify/cors";
 import websocket from "@fastify/websocket";
 import { aiCitationWarnings, buildPermissionFilteredContext, filterPermissionFilteredContextByScopes, validateAiCitationClaims, type AiBoardCaptureResult, type AiMessage, type AiProvider, type AiProviderEvent, type AiProviderRequest, type AiReasoningEffort, type AiToolContext, type AiToolDefinition, type AiToolJsonSchema, type PermissionFilteredContext } from "@open-tabletop/ai-core";
-import { apiContractPolicy, apiVersion, apiVersionHeader, openApiSpec } from "@open-tabletop/api-contracts";
+import { apiContractPolicy, apiVersion, apiVersionHeader, openApiSpec, type AdminAiThreadSummary, type AdminAiToolCallSummary } from "@open-tabletop/api-contracts";
 import { CodexAppServerProvider, CodexAppServerWebSocketTransport, LoopbackCodexTransport, stopLocalCodexAppServers } from "@open-tabletop/codex-app-server-provider";
 import {
   aiMemoryFactStatus,
@@ -339,6 +339,7 @@ import { registerCallEmbedRoutes } from "./call-embed.js";
 import { registerOpenApiRuntimeValidation } from "./openapi-runtime-validation.js";
 import { activeCombatForTypedDamage, dndTypedDamageCombatantChanges } from "./dnd-typed-damage-combat.js";
 import { registerSceneDelegationRoutes } from "./scene-delegation-routes.js";
+import { exceedsSceneVisionBudget, MAX_SCENE_LIGHTS, MAX_SCENE_WALLS, SceneVisionBudgetError } from "./scene-vision-budget.js";
 import { registerUniversalVttImportRoute } from "./universal-vtt-import.js";
 import { registerCampaignSessionRoutes } from "./campaign-session-routes.js";
 import { registerCampaignWebhookRoutes } from "./campaign-webhook-routes.js";
@@ -838,9 +839,6 @@ interface CampaignPermissionTemplate {
 }
 
 const MAX_FOG_HISTORY_ENTRIES = 100;
-// Every wall and light adds vision work, so editable scenes share one ceiling.
-const MAX_SCENE_WALLS = 10_000;
-const MAX_SCENE_LIGHTS = 5_000;
 const DEFAULT_SYSTEM_ID = DND_5E_SRD_SYSTEM_ID;
 const CORE_COMPATIBILITY_VERSION = "0.3.0";
 const AI_STALE_RUNNING_THREAD_MS = 15 * 60 * 1000;
@@ -1590,6 +1588,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   });
 
   app.setErrorHandler((error, request, reply) => {
+    if (error instanceof SceneVisionBudgetError) return reply.code(422).send({ error: "scene_vision_budget_exceeded", message: error.message });
     if (error instanceof DeclarativeArchiveDependencyError) return reply.code(422).send({ error: error.code, message: error.message, issues: error.issues });
     if (error instanceof DeclarativeSystemStateError) return reply.code(422).send({ error: "invalid_system_state", message: error.message, issues: error.issues });
     if (error instanceof DeclarativeRuntimeError) {
@@ -3422,10 +3421,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (allowed !== true) return allowed;
     // SCIM sources name identity-provider groups and mappings; only campaign managers need them.
     const includeSource = canCampaign(store, currentUserId(store, request.headers)!, request.params.campaignId, "campaign.update");
-    return store.state.members.filter((member) => member.campaignId === request.params.campaignId).map((member) => {
-      const info = memberSessionInfo(store, member);
-      return includeSource ? info : publicCampaignMember(info);
-    });
+    return campaignMemberList(store, request.params.campaignId, includeSource);
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/presence", async (request, reply) => {
@@ -3680,7 +3676,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     broadcast(createEvent({ campaignId: outcome.campaignId, type: "campaign.member.joined", actorUserId: outcome.user.id, targetId: outcome.user.id, payload: outcome.member }));
     if (!sessionCookieDeferred(request.headers)) attachSessionCookie(reply, outcome.sessionToken, outcome.session);
     else markSessionCookieDeferred(reply);
-    return { token: outcome.sessionToken, session: publicSession(outcome.session), user: outcome.user, serverAdmin: outcome.serverAdmin, invite: outcome.invite, membership: outcome.membership, campaign: outcome.campaign };
+    return { token: outcome.sessionToken, session: publicSession(outcome.session), user: outcome.user, serverAdmin: outcome.serverAdmin, invite: outcome.invite, membership: publicCampaignMember(outcome.membership), campaign: outcome.campaign };
   });
 
   registerCampaignSessionRoutes(app, {
@@ -4110,8 +4106,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{ Params: { campaignId: string }; Body: Partial<Scene> }>("/api/v1/campaigns/:campaignId/scenes", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.create");
     if (allowed !== true) return allowed;
-    if (request.body.walls !== undefined && (!Array.isArray(request.body.walls) || request.body.walls.length > MAX_SCENE_WALLS)) return badRequest(reply, `Scene walls must be an array of at most ${MAX_SCENE_WALLS} objects`);
-    if (request.body.lights !== undefined && (!Array.isArray(request.body.lights) || request.body.lights.length > MAX_SCENE_LIGHTS)) return badRequest(reply, `Scene lights must be an array of at most ${MAX_SCENE_LIGHTS} objects`);
+    if (request.body.walls !== undefined && (!Array.isArray(request.body.walls) || request.body.walls.length > MAX_SCENE_WALLS || request.body.walls.some((wall) => !isRecord(wall)))) return badRequest(reply, `Scene walls must be an array of at most ${MAX_SCENE_WALLS} objects`);
+    if (request.body.lights !== undefined && (!Array.isArray(request.body.lights) || request.body.lights.length > MAX_SCENE_LIGHTS || request.body.lights.some((light) => !isRecord(light)))) return badRequest(reply, `Scene lights must be an array of at most ${MAX_SCENE_LIGHTS} objects`);
+    if (exceedsSceneVisionBudget(request.body.walls ?? [], request.body.lights ?? [], [])) throw new SceneVisionBudgetError();
     const gridFields = normalizeSceneGridFields(request.body);
     if (!gridFields.ok) return badRequest(reply, gridFields.error);
     const userId = currentUserId(store, request.headers);
@@ -4302,12 +4299,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!opaqueHeaderText(request.headers["idempotency-key"])) return badRequest(reply, "Asset upload requires an Idempotency-Key header");
     const userId = currentUserId(store, request.headers)!;
     const shouldSetBackground = request.query.sceneId && truthyQuery(request.query.setAsBackground);
-    const scene = shouldSetBackground ? store.state.scenes.find((item) => item.id === request.query.sceneId && item.campaignId === request.params.campaignId) : undefined;
+    const findBackgroundScene = () => shouldSetBackground ? store.state.scenes.find((item) => item.id === request.query.sceneId && item.campaignId === request.params.campaignId) : undefined;
+    let scene = findBackgroundScene();
+    const checkBackgroundRevision = (target: Scene) => requireExpectedRevision(reply, { resourceType: "scene", resourceId: target.id, currentUpdatedAt: target.updatedAt, expectedUpdatedAt: request.query.expectedSceneUpdatedAt, current: withoutSceneEditHistory(target), label: "Scene" });
     if (shouldSetBackground) {
       const sceneUpdateAllowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.update");
       if (sceneUpdateAllowed !== true) return sceneUpdateAllowed;
       if (!scene) return notFound(reply, "Scene not found");
-      const revision = requireExpectedRevision(reply, { resourceType: "scene", resourceId: scene.id, currentUpdatedAt: scene.updatedAt, expectedUpdatedAt: request.query.expectedSceneUpdatedAt, current: withoutSceneEditHistory(scene), label: "Scene" });
+      const revision = checkBackgroundRevision(scene);
       if (revision !== true) return revision;
     }
     const body = Buffer.isBuffer(request.body) ? request.body : Buffer.from([]);
@@ -4325,6 +4324,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (quotaPrecheck) return reply.code(413).send(quotaPrecheck);
     const scan = await scanUploadedAsset(body, mimeType, sourceName, { externalTransport: options.assetScannerTransport });
     if (scan.blocked) return assetSecurityBlocked(reply, scan);
+    if (shouldSetBackground) {
+      scene = findBackgroundScene();
+      if (!scene) return notFound(reply, "Scene not found");
+      const revision = checkBackgroundRevision(scene);
+      if (revision !== true) return revision;
+    }
     const duplicate = reusableUploadedAsset(store, request.params.campaignId, checksum, body.length, mimeType);
     if (duplicate) {
       let mapCalibrationReset = false;
@@ -4806,6 +4811,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const normalizedBody = normalizeScenePatch(request.body);
     if (!normalizedBody.ok) return badRequest(reply, normalizedBody.error);
     const body = normalizedBody.value;
+    if ((body.walls || body.lights) && exceedsSceneVisionBudget(body.walls ?? scene.walls, body.lights ?? scene.lights, store.state.tokens, scene.id)) throw new SceneVisionBudgetError();
     if (body.annotations !== undefined && !canCampaign(store, userId!, campaignId, "token.reveal")) {
       if (body.annotations.some((annotation) => !sceneAnnotationIsPublic(annotation)) || scene.annotations.some((annotation) => !sceneAnnotationIsPublic(annotation))) return forbidden(reply, "Replacing GM annotations requires token.reveal permission");
     }
@@ -4877,7 +4883,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       const privateState = (annotations: SceneAnnotation[]) => annotations.filter((annotation) => !sceneAnnotationIsPublic(annotation));
       if (JSON.stringify(privateState(scene.annotations)) !== JSON.stringify(privateState(previous))) return forbidden(reply, "Undoing GM annotation changes requires token.reveal permission");
     }
-    const undone = undoSceneEdit(scene);
+    const undone = undoSceneEdit(scene, store.state.tokens);
     if (!undone) return badRequest(reply, "No scene edits available to undo");
     appendServerAuditLog(store, userId, { campaignId, action: "scene.edit.undo", targetType: "scene", targetId: scene.id, before: { snapshotId: undone.id, kind: undone.kind, at: undone.at } });
     store.save();
@@ -4923,8 +4929,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       const tokenAllowed = requireCampaignPermission(store, reply, request.headers, targetScene.campaignId, "token.create");
       if (tokenAllowed !== true) return tokenAllowed;
     }
+    const retainedTokens = store.state.tokens.filter((token) => token.sceneId === targetScene.id && token.metadata.aiEditSourceSceneId !== aiEditScene.id);
+    if (exceedsSceneVisionBudget(aiEditScene.walls.length ? aiEditScene.walls : targetScene.walls, aiEditScene.lights.length ? aiEditScene.lights : targetScene.lights, retainedTokens, targetScene.id, sourceTokens)) throw new SceneVisionBudgetError();
     const appliedAt = nowIso();
-    const before = { backgroundAssetId: targetScene.backgroundAssetId, fogCount: targetScene.fog.length, wallCount: targetScene.walls.length, lightCount: targetScene.lights.length, annotationCount: targetScene.annotations?.length ?? 0, appliedTokenCount: store.state.tokens.filter((token) => token.sceneId === targetScene.id && token.metadata.aiEditSourceSceneId === aiEditScene.id).length };
+    const before = { backgroundAssetId: targetScene.backgroundAssetId, fogCount: targetScene.fog.length, wallCount: targetScene.walls.length, lightCount: targetScene.lights.length, annotationCount: targetScene.annotations?.length ?? 0, appliedTokenCount: targetTokens.length };
     if (aiEditScene.backgroundAssetId) targetScene.backgroundAssetId = aiEditScene.backgroundAssetId;
     if (aiEditScene.fog.length > 0) targetScene.fog = cloneJsonValue(aiEditScene.fog) as FogRegion[];
     if (aiEditScene.walls.length > 0) targetScene.walls = cloneJsonValue(aiEditScene.walls) as Wall[];
@@ -5202,6 +5210,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const kind: WallKind = normalized.patch.kind ?? "wall";
     const defaults = wallDefaultsForKind(kind);
     const wall = { id: createId("wall"), x1: normalized.patch.x1, y1: normalized.patch.y1, x2: normalized.patch.x2, y2: normalized.patch.y2, blocksVision: normalized.patch.blocksVision ?? defaults.blocksVision, blocksMovement: normalized.patch.blocksMovement ?? defaults.blocksMovement, kind, ...(kind === "door" || kind === "window" ? { open: normalized.patch.open ?? false } : {}), ...(normalized.patch.locked === undefined ? {} : { locked: normalized.patch.locked }) };
+    if (exceedsSceneVisionBudget([...scene.walls, wall], scene.lights, store.state.tokens, scene.id)) throw new SceneVisionBudgetError();
     captureSceneEditSnapshot(scene, userId, "scene.wall.create");
     scene.walls.push(wall);
     scene.updatedAt = nowIso();
@@ -5234,6 +5243,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return badRequest(reply, "Wall endpoints must not be identical");
     }
     const before = { ...wall };
+    if (exceedsSceneVisionBudget(scene.walls.map((item) => item === wall ? candidate : item), scene.lights, store.state.tokens, scene.id)) throw new SceneVisionBudgetError();
     captureSceneEditSnapshot(scene, userId, "scene.wall.update");
     Object.assign(wall, normalized.patch);
     scene.updatedAt = nowIso();
@@ -5275,6 +5285,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const normalized = normalizeLightSourcePatch(light);
     if ("error" in normalized) return badRequest(reply, normalized.error);
     Object.assign(light, normalized.patch);
+    if (exceedsSceneVisionBudget(scene.walls, [...scene.lights, light], store.state.tokens, scene.id)) throw new SceneVisionBudgetError();
     captureSceneEditSnapshot(scene, userId, "scene.light.create");
     scene.lights.push(light);
     scene.updatedAt = nowIso();
@@ -5301,6 +5312,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       return badRequest(reply, normalized.error);
     }
     const before = { ...light };
+    if (exceedsSceneVisionBudget(scene.walls, scene.lights.map((item) => item === light ? { ...item, ...normalized.patch } : item), store.state.tokens, scene.id)) throw new SceneVisionBudgetError();
     captureSceneEditSnapshot(scene, userId, "scene.light.update");
     Object.assign(light, normalized.patch);
     scene.updatedAt = nowIso();
@@ -5420,6 +5432,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const normalizedTabletop = normalizeTokenTabletopPatch(request.body, campaignMemberUserIds(store, campaignId));
     if ("error" in normalizedTabletop) return badRequest(reply, normalizedTabletop.error);
     Object.assign(token, normalizedVision.patch, normalizedLayer.patch, normalizedTabletop.patch);
+    if (token.visionEnabled && exceedsSceneVisionBudget(scene.walls, scene.lights, store.state.tokens, scene.id, [token])) throw new SceneVisionBudgetError();
     store.state.tokens.push(token);
     scene.updatedAt = nextRevisionTimestamp(scene.updatedAt);
     store.save();
@@ -5450,6 +5463,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     });
     if (!prepared.ok) return sendTokenMoveBatchCommandFailure(reply, prepared.error);
 
+    const movedTokens = prepared.value.changes.map(({ token, x, y }) => ({ ...token, x, y }));
+    if (exceedsSceneVisionBudget(scene.walls, scene.lights, store.state.tokens, scene.id, movedTokens)) throw new SceneVisionBudgetError();
     const committed = commitPreparedTokenMoveBatchCommand(prepared.value);
     appendServerAuditLog(store, userId, {
       campaignId,
@@ -5526,6 +5541,9 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const normalizedTransform = normalizeTokenTransformPatch(request.body);
     if ("error" in normalizedTransform) return badRequest(reply, normalizedTransform.error);
     const patch = moveOnly ? normalizedMove.patch : { ...tokenPatchFromBody(request.body), ...normalizedMove.patch, ...normalizedTransform.patch, ...normalizedVision.patch, ...normalizedLayer.patch, ...normalizedTabletop.patch };
+    const candidate = { ...token, ...patch };
+    const visionChanged = moved || request.body.width !== undefined || request.body.height !== undefined || Object.keys(normalizedVision.patch).length > 0;
+    if (candidate.visionEnabled && visionChanged && exceedsSceneVisionBudget(scene.walls, scene.lights, store.state.tokens, scene.id, [candidate])) throw new SceneVisionBudgetError();
     Object.assign(token, patch, { updatedAt: nowIso() });
     store.save();
     if (scene) {
@@ -10460,6 +10478,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       prepared.push(placement);
     }
     const placedTokenIds = prepared.map((placement) => placement.token.id);
+    if (exceedsSceneVisionBudget(scene.walls, scene.lights, store.state.tokens, scene.id, prepared.map(({ token }) => token))) throw new SceneVisionBudgetError();
     const encounterTokenIdsBefore = [...encounter.tokenIds];
     store.state.actors.push(...prepared.map((placement) => placement.actor));
     store.state.tokens.push(...prepared.map((placement) => placement.token));
@@ -14301,14 +14320,14 @@ function aiOperationsRemediationQueue(input: { runtimePosture: ReturnType<typeof
     });
   }
   if (input.risk.staleRunningThreadCount > 0) {
-    remediations.push({ code: "fail_stale_ai_threads", severity: "error", action: "Run stale AI thread cleanup to mark hung running threads failed after confirming provider timeout behavior.", affectedCount: input.risk.staleRunningThreadCount, samples: input.risk.recentStaleRunningThreads.slice(0, 3).map((thread) => ({ threadId: thread.id, campaignId: thread.campaignId, provider: thread.provider, title: thread.title, ageMs: thread.ageMs })) });
+    remediations.push({ code: "fail_stale_ai_threads", severity: "error", action: "Run stale AI thread cleanup to mark hung running threads failed after confirming provider timeout behavior.", affectedCount: input.risk.staleRunningThreadCount, samples: input.risk.recentStaleRunningThreads.slice(0, 3).map((thread) => ({ threadId: thread.id, campaignId: thread.campaignId, provider: thread.provider, ageMs: thread.ageMs })) });
   }
   if (input.risk.staleStartedToolCallCount > 0) {
     remediations.push({ code: "fail_stale_ai_tool_calls", severity: "error", action: "Run stale AI tool-call cleanup so hung started calls become explicit failures that can be reviewed or retried.", affectedCount: input.risk.staleStartedToolCallCount, samples: input.risk.recentStaleStartedToolCalls.slice(0, 3).map((call) => ({ toolCallId: call.id, threadId: call.threadId, campaignId: call.campaignId, provider: call.provider, toolName: call.toolName, ageMs: call.ageMs })) });
   }
   const retryablePolicy = input.risk.failedToolRetryPolicy;
   if (retryablePolicy && retryablePolicy.retryableCount > 0) {
-    remediations.push({ code: "replay_retryable_ai_tools", severity: "warning", action: "Replay retryable failed AI tool calls after confirming the original thread user still has the required campaign permissions.", affectedCount: retryablePolicy.retryableCount, samples: retryablePolicy.recentRetryable.slice(0, 3).map((call) => ({ toolCallId: call.id, threadId: call.threadId, campaignId: call.campaignId, campaignName: call.campaignName, provider: call.provider, threadTitle: call.threadTitle, threadStatus: call.threadStatus, toolName: call.toolName, error: call.error, retryReason: call.retryReason, createdAt: call.createdAt })) });
+    remediations.push({ code: "replay_retryable_ai_tools", severity: "warning", action: "Replay retryable failed AI tool calls after confirming the original thread user still has the required campaign permissions.", affectedCount: retryablePolicy.retryableCount, samples: retryablePolicy.recentRetryable.slice(0, 3).map((call) => ({ toolCallId: call.id, threadId: call.threadId, campaignId: call.campaignId, campaignName: call.campaignName, provider: call.provider, threadStatus: call.threadStatus, toolName: call.toolName, error: call.error, retryReason: call.retryReason, createdAt: call.createdAt })) });
   }
   const nonRetryableTools = retryablePolicy?.byTool.filter((tool) => tool.nonRetryable > 0) ?? [];
   if (nonRetryableTools.length > 0) {
@@ -14323,7 +14342,7 @@ function aiOperationsRemediationQueue(input: { runtimePosture: ReturnType<typeof
       samples: input.replayOperations.recentRetried
         .filter((call) => call.resultStatus === "failed")
         .slice(0, 3)
-        .map((call) => ({ toolCallId: call.id, threadId: call.threadId, campaignId: call.campaignId, campaignName: call.campaignName, provider: call.provider, threadTitle: call.threadTitle, toolName: call.toolName, resultCallId: call.resultCallId, resultError: call.resultError, retriedAt: call.retriedAt })),
+        .map((call) => ({ toolCallId: call.id, threadId: call.threadId, campaignId: call.campaignId, campaignName: call.campaignName, provider: call.provider, toolName: call.toolName, resultCallId: call.resultCallId, resultError: call.resultError, retriedAt: call.retriedAt })),
     });
   }
   if (input.risk.costBudgetExceeded) {
@@ -14367,7 +14386,7 @@ function summarizeAiEvaluationCoverage(threads: AiThread[], evaluations: AiEvalu
       .slice()
       .sort(sortTimestampsDesc)
       .slice(0, 20)
-      .map((thread) => ({ id: thread.id, campaignId: thread.campaignId, title: thread.title, provider: thread.provider, status: thread.status, createdAt: thread.createdAt, updatedAt: thread.updatedAt })),
+      .map((thread) => ({ id: thread.id, campaignId: thread.campaignId, provider: thread.provider, status: thread.status, createdAt: thread.createdAt, updatedAt: thread.updatedAt })),
   };
 }
 
@@ -14532,7 +14551,7 @@ function summarizeAiOperationsRisk(store: StateStore) {
       .slice()
       .sort(sortTimestampsDesc)
       .slice(0, 20)
-      .map((thread) => ({ id: thread.id, campaignId: thread.campaignId, title: thread.title, provider: thread.provider, startedAt: thread.startedAt, ageMs: aiRunningThreadAgeMs(thread) })),
+      .map((thread) => ({ id: thread.id, campaignId: thread.campaignId, provider: thread.provider, startedAt: thread.startedAt, ageMs: aiRunningThreadAgeMs(thread) })),
     recentStaleStartedToolCalls: staleStartedToolCalls
       .slice()
       .sort(sortTimestampsDesc)
@@ -14664,7 +14683,7 @@ async function retryFailedAiToolCalls(store: StateStore, runtime: AiToolRuntime,
   const tools = createAiThreadTools();
   const failedCalls = store.state.aiToolCalls
     .filter((call) => call.status === "failed")
-    .filter((call) => aiToolFailureRetryPolicy(call).retryable)
+    .filter((call) => aiToolFailureRetryPolicy(aiToolErrorCode(call.output)).retryable)
     .filter((call) => call.retry === undefined)
     .filter((call) => !toolCallId || call.id === toolCallId)
     .filter((call) => !threadId || call.threadId === threadId)
@@ -14684,7 +14703,7 @@ async function retryFailedAiToolCalls(store: StateStore, runtime: AiToolRuntime,
   for (const call of failedCalls) {
     const thread = threadById.get(call.threadId);
     const originalInputCall = aiToolCallRetryInputCall(store, call);
-    const policy = aiToolFailureRetryPolicy(call);
+    const policy = aiToolFailureRetryPolicy(aiToolErrorCode(call.output));
     if (!thread || !originalInputCall) {
       skipped += 1;
       results.push(aiToolRetrySummary(call, thread, { retryReason: policy.reason, status: "skipped", skipReason: "missing_original_input" }));
@@ -14752,15 +14771,17 @@ function summarizeAiProviderErrors(threads: AiThread[], campaignById: Map<string
         .slice()
         .sort(sortTimestampsDesc)
         .slice(0, 5)
-        .map((thread) => ({ id: thread.id, campaignId: thread.campaignId, campaignName: campaignById.get(thread.campaignId)?.name, provider: thread.provider, title: thread.title, status: thread.status, failedAt: thread.failedAt, retryAttempts: thread.retryAttempts, durationMs: thread.durationMs })),
+        .map((thread) => ({ id: thread.id, campaignId: thread.campaignId, campaignName: campaignById.get(thread.campaignId)?.name, provider: thread.provider, status: thread.status, failedAt: thread.failedAt, retryAttempts: thread.retryAttempts, durationMs: thread.durationMs })),
     }))
     .sort((left, right) => right.count - left.count || left.message.localeCompare(right.message))
     .slice(0, 20);
 }
 
 function sanitizeAiProviderError(message: string | undefined): string | undefined {
-  const trimmed = message?.replace(/\s+/g, " ").trim();
-  return trimmed ? trimmed.slice(0, 160) : undefined;
+  if (!message?.trim()) return undefined;
+  if (/\b(?:timeout|timed out)\b/i.test(message)) return "provider_timeout";
+  if (/\brate[ _-]limit(?:ed)?\b/i.test(message)) return "provider_rate_limited";
+  return "provider_error";
 }
 
 function summarizeAiFailedToolCalls(toolCalls: AiToolCall[]) {
@@ -14768,7 +14789,7 @@ function summarizeAiFailedToolCalls(toolCalls: AiToolCall[]) {
   for (const call of toolCalls) {
     const entry = counts.get(call.toolName) ?? { toolName: call.toolName, count: 0, errorCount: new Map<string, number>() };
     entry.count += 1;
-    const errorCode = aiToolErrorCode(call.output);
+    const errorCode = adminAiToolErrorCode(call.output);
     if (errorCode) entry.errorCount.set(errorCode, (entry.errorCount.get(errorCode) ?? 0) + 1);
     counts.set(call.toolName, entry);
   }
@@ -14785,7 +14806,7 @@ function summarizeAiFailedToolCalls(toolCalls: AiToolCall[]) {
 }
 
 function summarizeAiFailedToolRetryPolicy(toolCalls: AiToolCall[], threadById: Map<string, AiThread>, campaignById: Map<string, Campaign>) {
-  const retryableCalls = toolCalls.filter((call) => aiToolFailureRetryPolicy(call).retryable);
+  const retryableCalls = toolCalls.filter((call) => aiToolFailureRetryPolicy(adminAiToolErrorCode(call.output)).retryable);
   return {
     retryableCount: retryableCalls.length,
     nonRetryableCount: Math.max(0, toolCalls.length - retryableCalls.length),
@@ -14796,8 +14817,8 @@ function summarizeAiFailedToolRetryPolicy(toolCalls: AiToolCall[], threadById: M
       .slice(0, 20)
       .map((call) => {
         const thread = threadById.get(call.threadId);
-        const policy = aiToolFailureRetryPolicy(call);
-        return { id: call.id, threadId: call.threadId, campaignId: thread?.campaignId, campaignName: thread ? campaignById.get(thread.campaignId)?.name : undefined, provider: thread?.provider, threadTitle: thread?.title, threadStatus: thread?.status, toolName: call.toolName, error: aiToolErrorCode(call.output), retryReason: policy.reason, createdAt: call.createdAt };
+        const policy = aiToolFailureRetryPolicy(adminAiToolErrorCode(call.output));
+        return { id: call.id, threadId: call.threadId, campaignId: thread?.campaignId, campaignName: thread ? campaignById.get(thread.campaignId)?.name : undefined, provider: thread?.provider, threadStatus: thread?.status, toolName: call.toolName, error: adminAiToolErrorCode(call.output), retryReason: policy.reason, createdAt: call.createdAt };
       }),
   };
 }
@@ -14805,7 +14826,7 @@ function summarizeAiFailedToolRetryPolicy(toolCalls: AiToolCall[], threadById: M
 function summarizeAiFailedToolRetryPolicyByTool(toolCalls: AiToolCall[]) {
   const counts = new Map<string, { toolName: string; retryable: number; nonRetryable: number; reasons: Map<string, number> }>();
   for (const call of toolCalls) {
-    const policy = aiToolFailureRetryPolicy(call);
+    const policy = aiToolFailureRetryPolicy(adminAiToolErrorCode(call.output));
     const entry = counts.get(call.toolName) ?? { toolName: call.toolName, retryable: 0, nonRetryable: 0, reasons: new Map<string, number>() };
     if (policy.retryable) {
       entry.retryable += 1;
@@ -14857,7 +14878,7 @@ function summarizeAiToolReplayOperations(store: StateStore) {
         const thread = threadById.get(call.threadId);
         const campaign = thread ? campaignById.get(thread.campaignId) : undefined;
         const resultCall = call.retry?.resultCallId ? toolCallById.get(call.retry.resultCallId) : undefined;
-        return { id: call.id, threadId: call.threadId, campaignId: thread?.campaignId, campaignName: campaign?.name, provider: thread?.provider, threadTitle: thread?.title, threadStatus: thread?.status, toolName: call.toolName, originalError: aiToolErrorCode(call.output), retriedAt: call.retry?.retriedAt, startedCallId: call.retry?.startedCallId, resultCallId: call.retry?.resultCallId, resultStatus: call.retry?.resultStatus, resultError: resultCall ? aiToolErrorCode(resultCall.output) : undefined };
+        return { id: call.id, threadId: call.threadId, campaignId: thread?.campaignId, campaignName: campaign?.name, provider: thread?.provider, threadStatus: thread?.status, toolName: call.toolName, originalError: adminAiToolErrorCode(call.output), retriedAt: call.retry?.retriedAt, startedCallId: call.retry?.startedCallId, resultCallId: call.retry?.resultCallId, resultStatus: call.retry?.resultStatus, resultError: resultCall ? adminAiToolErrorCode(resultCall.output) : undefined };
       }),
     recentRuns: replayAuditLogs.slice(0, 12).map((log) => {
       const after = isRecord(log.after) ? log.after : {};
@@ -14866,8 +14887,7 @@ function summarizeAiToolReplayOperations(store: StateStore) {
   };
 }
 
-function aiToolFailureRetryPolicy(call: AiToolCall): { retryable: boolean; reason: string } {
-  const errorCode = aiToolErrorCode(call.output);
+function aiToolFailureRetryPolicy(errorCode: string | undefined): { retryable: boolean; reason: string } {
   if (errorCode === "tool_failed" || errorCode === "stale_tool_call") return { retryable: true, reason: errorCode };
   if (errorCode === "missing_permission" || errorCode === "invalid_tool_input" || errorCode === "unknown_tool") return { retryable: false, reason: errorCode };
   return { retryable: false, reason: errorCode ?? "unknown_failure" };
@@ -14900,17 +14920,70 @@ function adminAiEvaluationInfo(evaluation: AiEvaluationRun, threadById: Map<stri
   return { ...evaluation, campaignName: campaign?.name, threadTitle: thread?.title, threadStatus: thread?.status, failedChecks: evaluation.checks.filter((check) => check.status === "failed") };
 }
 
-// Server-admin AI telemetry is operational: it never carries prompts, model
-// replies, sources or tool inputs/outputs from campaigns the admin may not belong to.
-function adminAiThreadInfo(thread: AiThread, campaigns: Campaign[]) {
-  return { id: thread.id, campaignId: thread.campaignId, campaignName: campaigns.find((item) => item.id === thread.campaignId)?.name, userId: thread.userId, provider: thread.provider, title: thread.title, status: thread.status, startedAt: thread.startedAt, completedAt: thread.completedAt, failedAt: thread.failedAt, durationMs: thread.durationMs, retryAttempts: thread.retryAttempts, eventCount: thread.eventCount, toolCallCount: thread.toolCallCount, providerError: sanitizeAiProviderError(thread.providerError), usage: thread.usage, createdAt: thread.createdAt, updatedAt: thread.updatedAt };
+// Only return locally defined error codes. Providers and older stored calls can put
+// arbitrary campaign text in the error field, including on a completed call.
+const adminAiToolErrorCodes = new Set([
+  "asset_bytes_unavailable", "asset_quota_exceeded", "asset_too_large", "blocked_critical_action",
+  "conflict", "empty_change", "image_generation_failed", "invalid_proposal_change",
+  "invalid_proposal_changes", "invalid_proposal_scope", "invalid_tool_input", "missing_permission",
+  "not_found", "pending_resolution", "proposal_apply_incomplete", "proposal_not_approved",
+  "proposal_not_pending", "stale_tool_call", "tool_cancelled", "tool_failed", "tool_unavailable",
+  "unknown_tool", "unsupported_effect", "unsupported_target",
+]);
+
+function adminAiToolErrorCode(output: unknown): string | undefined {
+  if (!isRecord(output) || typeof output.error !== "string") return undefined;
+  const code = output.error.trim();
+  if (!code) return undefined;
+  return adminAiToolErrorCodes.has(code) ? code : "unknown_failure";
 }
 
-function adminAiToolCallInfo(call: AiToolCall, threadById: Map<string, AiThread>, campaigns: Campaign[]) {
+function adminAiThreadInfo(thread: AiThread, campaigns: Campaign[]): AdminAiThreadSummary {
+  const usage = thread.usage;
+  return {
+    id: thread.id,
+    campaignId: thread.campaignId,
+    campaignName: campaigns.find((campaign) => campaign.id === thread.campaignId)?.name,
+    provider: thread.provider,
+    status: thread.status,
+    startedAt: thread.startedAt,
+    completedAt: thread.completedAt,
+    failedAt: thread.failedAt,
+    durationMs: thread.durationMs,
+    retryAttempts: thread.retryAttempts,
+    eventCount: thread.eventCount,
+    toolCallCount: thread.toolCallCount,
+    usage: usage && {
+      promptCharacters: usage.promptCharacters, contextCharacters: usage.contextCharacters,
+      responseCharacters: usage.responseCharacters, inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens, totalTokens: usage.totalTokens, estimatedCostUsd: usage.estimatedCostUsd,
+    },
+    createdAt: thread.createdAt,
+    updatedAt: thread.updatedAt,
+  };
+}
+
+function adminAiToolCallInfo(call: AiToolCall, threadById: Map<string, AiThread>, campaigns: Campaign[]): AdminAiToolCallSummary {
   const thread = threadById.get(call.threadId);
   const campaign = thread ? campaigns.find((item) => item.id === thread.campaignId) : undefined;
-  const errorCode = aiToolErrorCode(call.output);
-  return { id: call.id, threadId: call.threadId, toolName: call.toolName, status: call.status, durationMs: call.durationMs, retry: call.retry, output: errorCode ? { error: errorCode } : undefined, createdAt: call.createdAt, updatedAt: call.updatedAt, campaignId: thread?.campaignId, campaignName: campaign?.name, provider: thread?.provider, threadTitle: thread?.title, threadStatus: thread?.status };
+  return {
+    id: call.id,
+    threadId: call.threadId,
+    campaignId: thread?.campaignId,
+    campaignName: campaign?.name,
+    provider: thread?.provider,
+    threadStatus: thread?.status,
+    toolName: call.toolName,
+    status: call.status,
+    durationMs: call.durationMs,
+    error: adminAiToolErrorCode(call.output),
+    retry: call.retry && {
+      retriedAt: call.retry.retriedAt, startedCallId: call.retry.startedCallId,
+      resultCallId: call.retry.resultCallId, resultStatus: call.retry.resultStatus,
+    },
+    createdAt: call.createdAt,
+    updatedAt: call.updatedAt,
+  };
 }
 
 function aiProviderRuntimeConfig(aiProvider: AiProvider) {
@@ -21000,7 +21073,7 @@ function permissionsForUser(store: StateStore, userId: string, campaignId: strin
 }
 
 interface TokenVisibilityCache {
-  scenes: Map<string, CachedSceneVisibility>;
+  scenes: Map<string, CachedSceneVisibility | { key: string; overBudget: true }>;
 }
 
 interface CachedSceneVisibility {
@@ -21042,11 +21115,12 @@ function isTokenVisibleToUser(store: StateStore, userId: string, campaignId: str
   if (isTokenOwnedByUser(store, userId, token)) return true;
   const scene = store.state.scenes.find((item) => item.id === token.sceneId);
   if (!scene) return false;
-  const visibility = sceneVisibilityForCache(scene, cache);
+  const visibility = sceneVisibilityForCache(store, scene, cache);
+  if ("overBudget" in visibility) return false;
   return isPointVisibleInSceneVision(centerOfToken(token), {
     visibilityMode: scene.visibilityMode,
     fogActive: visibility.activeFog.length > 0,
-    polygons: [...visibility.fogPolygons, ...ownedVisionPolygonsForUser(store, userId, scene, sceneTokens, cache), ...visibility.lightPolygons]
+    polygons: [...visibility.fogPolygons, ...ownedVisionPolygonsForUser(store, userId, scene, visibility, sceneTokens), ...visibility.lightPolygons]
   });
 }
 
@@ -21059,26 +21133,22 @@ function campaignMemberUserIds(store: StateStore, campaignId: string): Set<strin
 }
 
 function visionSnapshotForUser(store: StateStore, userId: string, campaignId: string, scene: Scene, cache?: TokenVisibilityCache): VisionSnapshot {
-  const activeFog = scene.fog.filter((region) => !region.hidden);
-  const lightPolygons = sceneVisibilityForCache(scene, cache).lightPolygons;
+  const visibility = sceneVisibilityForCache(store, scene, cache);
+  if ("overBudget" in visibility) throw new SceneVisionBudgetError();
+  const { activeFog, lightPolygons } = visibility;
   if (canReadHiddenTokens(store, userId, campaignId) || (scene.visibilityMode !== "dynamic" && activeFog.length === 0)) {
     return { sceneId: scene.id, userId, fogActive: false, polygons: lightPolygons };
   }
-  const visibility = sceneVisibilityForCache(scene, cache);
-  return { sceneId: scene.id, userId, fogActive: true, polygons: [...visibility.fogPolygons, ...ownedVisionPolygonsForUser(store, userId, scene, undefined, cache), ...lightPolygons] };
+  return { sceneId: scene.id, userId, fogActive: true, polygons: [...visibility.fogPolygons, ...ownedVisionPolygonsForUser(store, userId, scene, visibility), ...lightPolygons] };
 }
 
-function ownedVisionPolygonsForUser(store: StateStore, userId: string, scene: Scene, sceneTokens?: Token[], cache?: TokenVisibilityCache): VisionPolygon[] {
-  if (cache) {
-    const visibility = sceneVisibilityForCache(scene, cache);
-    const userCache = sceneTokens ? providedTokenVisionCache(visibility, sceneTokens) : visibility.ownedVisionByStoreTokens;
-    const cached = userCache.get(userId);
-    if (cached) return cached;
-    const polygons = computeOwnedVisionPolygonsForUser(store, userId, scene, sceneTokens);
-    userCache.set(userId, polygons);
-    return polygons;
-  }
-  return computeOwnedVisionPolygonsForUser(store, userId, scene, sceneTokens);
+function ownedVisionPolygonsForUser(store: StateStore, userId: string, scene: Scene, visibility: CachedSceneVisibility, sceneTokens?: Token[]): VisionPolygon[] {
+  const userCache = sceneTokens ? providedTokenVisionCache(visibility, sceneTokens) : visibility.ownedVisionByStoreTokens;
+  const cached = userCache.get(userId);
+  if (cached) return cached;
+  const polygons = computeOwnedVisionPolygonsForUser(store, userId, scene, sceneTokens);
+  userCache.set(userId, polygons);
+  return polygons;
 }
 
 function computeOwnedVisionPolygonsForUser(store: StateStore, userId: string, scene: Scene, sceneTokens?: Token[]): VisionPolygon[] {
@@ -21094,16 +21164,15 @@ function providedTokenVisionCache(visibility: CachedSceneVisibility, sceneTokens
   return userCache;
 }
 
-function sceneVisibilityForCache(scene: Scene, cache?: TokenVisibilityCache): CachedSceneVisibility {
+function sceneVisibilityForCache(store: StateStore, scene: Scene, cache?: TokenVisibilityCache): CachedSceneVisibility | { key: string; overBudget: true } {
   const key = `${scene.id}:${scene.updatedAt}`;
-  if (cache) {
-    const cached = cache.scenes.get(scene.id);
-    if (cached?.key === key) return cached;
-    const visibility = computeSceneVisibility(scene, key);
-    cache.scenes.set(scene.id, visibility);
-    return visibility;
-  }
-  return computeSceneVisibility(scene, key);
+  const cached = cache?.scenes.get(scene.id);
+  if (cached?.key === key) return cached;
+  const visibility = exceedsSceneVisionBudget(scene.walls, scene.lights, store.state.tokens, scene.id)
+    ? { key, overBudget: true as const }
+    : computeSceneVisibility(scene, key);
+  cache?.scenes.set(scene.id, visibility);
+  return visibility;
 }
 
 function computeSceneVisibility(scene: Scene, key: string): CachedSceneVisibility {
@@ -21152,13 +21221,16 @@ function visionBlockersForPoint(store: StateStore, userId: string, scene: Scene,
 }
 
 function sceneRenderingDiagnostics(store: StateStore, scene: Scene) {
-  const fogPolygons = scene.fog.map((region) => computeFogRevealPolygon(scene, region)).filter((polygon): polygon is VisionPolygon => Boolean(polygon));
-  const lightPolygons = scene.lights.flatMap((light) => computeLightVisionPolygons(scene, light)).filter((polygon): polygon is VisionPolygon => Boolean(polygon));
   const sceneTokens = store.state.tokens.filter((token) => token.sceneId === scene.id);
-  const tokenPolygons = sceneTokens.filter((token) => token.visionEnabled && tokenVisionOuterRadius(token) > 0).flatMap((token) => computeTokenVisionPolygons(scene, token));
+  const overBudget = exceedsSceneVisionBudget(scene.walls, scene.lights, sceneTokens, scene.id);
+  const fogPolygons = scene.fog.map((region) => computeFogRevealPolygon(scene, region)).filter((polygon): polygon is VisionPolygon => Boolean(polygon));
+  const lightPolygons = overBudget ? [] : scene.lights.flatMap((light) => computeLightVisionPolygons(scene, light));
+  const tokenPolygons = overBudget ? [] : sceneTokens.filter((token) => token.visionEnabled && tokenVisionOuterRadius(token) > 0).flatMap((token) => computeTokenVisionPolygons(scene, token));
   const polygons = [...fogPolygons, ...lightPolygons, ...tokenPolygons];
   const complexity = sceneRenderingComplexity(polygons);
-  const issues = [...sceneRenderingDiagnosticIssues(scene, sceneTokens), ...sceneRenderingComplexityIssues(complexity)];
+  const issues = overBudget
+    ? [sceneRenderingIssue("scene_vision_budget_exceeded", "error", "scene", scene.id, new SceneVisionBudgetError().message)]
+    : [...sceneRenderingDiagnosticIssues(scene, sceneTokens), ...sceneRenderingComplexityIssues(complexity)];
   const issueSeverityCounts = countBy(issues, (issue) => String(issue.severity ?? "unknown"));
   const issueCodeCounts = countBy(issues, (issue) => String(issue.code ?? "unknown"));
   const actionReasons = sceneRenderingActionReasons(issueSeverityCounts, complexity);
@@ -21936,6 +22008,9 @@ function realtimeClientAuthorizationIsCurrent(store: StateStore, client: Realtim
 
 function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: string | undefined, visibilityCache?: TokenVisibilityCache): EngineEvent | undefined {
   if (!userId || !canCampaign(store, userId, event.campaignId, "campaign.read")) return undefined;
+  if (event.type.startsWith("campaign.member.") && isRecord(event.payload) && "source" in event.payload && !canCampaign(store, userId, event.campaignId, "campaign.update")) {
+    return redactedRealtimeEvent(event, publicCampaignMember(event.payload));
+  }
   if (event.type === "agent.boardCaptureRequested") {
     const payload = isRecord(event.payload) ? event.payload : {};
     return payload.userId === userId ? event : undefined;
@@ -22409,9 +22484,16 @@ function campaignPermissionTemplateGrants(campaignId: string, templateId: Campai
   return template.grants.map((grant) => createTimestamped("grant", { subjectType: "role" as const, subjectId: grant.role, campaignId, permissions: grant.permissions, metadata: { source: "campaign_permission_template", templateId, ...(templateId === "ai_assisted" ? { aiUseTemplateVersion: 1 } : {}) } }));
 }
 
-function publicCampaignMember<T extends CampaignMember>(member: T): Omit<T, "source"> {
+function publicCampaignMember<T extends CampaignMember | Record<string, unknown>>(member: T): Omit<T, "source"> {
   const { source: _source, ...publicMember } = member;
   return publicMember;
+}
+
+function campaignMemberList(store: StateStore, campaignId: string, includeSource: boolean) {
+  return store.state.members.filter((member) => member.campaignId === campaignId).map((member) => {
+    const info = memberSessionInfo(store, member);
+    return includeSource ? info : publicCampaignMember(info);
+  });
 }
 
 function memberSessionInfo(store: StateStore, member: CampaignMember): CampaignMember & { user: Pick<User, "id" | "displayName" | "email">; active: boolean; permissions: PermissionName[] } {
@@ -24076,7 +24158,7 @@ function buildCampaignSnapshot(store: StateStore, userId: string, campaign: Camp
     realtimeRecovery: "refetch_snapshot_on_gap",
     user: publicUser(store.state.users.find((candidate) => candidate.id === userId)!),
     campaign,
-    members: store.state.members.filter((member) => member.campaignId === campaignId).map((member) => memberSessionInfo(store, member)),
+    members: campaignMemberList(store, campaignId, canManage),
     campaignSessions: store.state.campaignSessions.filter((session) => session.campaignId === campaignId && (canViewPrep || session.status === "live")).map((session) => (canViewPrep ? session : { ...session, agenda: "", notes: "", encounterIds: session.encounterIds.filter((encounterId) => store.state.combats.some((combat) => combat.active && combat.campaignId === campaignId && combat.encounterId === encounterId)), sceneIds: session.sceneIds.filter((sceneId) => scenes.some((scene) => scene.id === sceneId)) })),
     worlds: canWorld ? store.state.worlds.filter((world) => world.campaignId === campaignId) : [],
     worldRecords: readableWorldRecords,
@@ -24149,10 +24231,11 @@ function captureSceneEditSnapshot(scene: Scene, userId: string | undefined, kind
   scene.sceneEditHistory = [...(scene.sceneEditHistory ?? []), snapshot].slice(-SCENE_EDIT_HISTORY_LIMIT);
 }
 
-function undoSceneEdit(scene: Scene): SceneEditSnapshot | undefined {
+function undoSceneEdit(scene: Scene, tokens: Token[]): SceneEditSnapshot | undefined {
   const history = scene.sceneEditHistory ?? [];
   const last = history[history.length - 1];
   if (!last) return undefined;
+  if (exceedsSceneVisionBudget(last.state.walls, last.state.lights, tokens, scene.id)) throw new SceneVisionBudgetError();
   scene.sceneEditHistory = history.slice(0, -1);
   const restored = structuredClone(last.state);
   scene.worldId = restored.worldId;
@@ -24261,7 +24344,7 @@ function projectSceneResponseForUser(store: StateStore, userId: string, payload:
     }
     return { ...payload, data: projectedData };
   }
-  if (typeof payload.id === "string" && typeof payload.campaignId === "string" && Array.isArray(payload.annotations)) return scenePayloadForUser(store, userId, payload as unknown as Scene);
+  if (typeof payload.id === "string" && typeof payload.campaignId === "string" && (Array.isArray(payload.annotations) || Array.isArray(payload.fogHistory))) return scenePayloadForUser(store, userId, payload as unknown as Scene);
   // Include proposal wrappers and rollback guards: their expected scenes are
   // authoritative internally, but must use the same caller projection on the wire.
   let result = payload;

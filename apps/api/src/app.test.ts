@@ -19,6 +19,7 @@ import { loadPluginRegistry, pluginPackageIdentityChecksum, pluginSignatureForPa
 import { installedSystems } from "./registries.js";
 import { SqliteStateStore } from "./sqlite-store.js";
 import { MemoryStateStore } from "./store.js";
+import { MAX_SCENE_LIGHTS, MAX_SCENE_WALLS } from "./scene-vision-budget.js";
 
 const authHeaders = { "x-user-id": "usr_demo_gm" };
 const demoPassword = "demo-password-123";
@@ -9429,12 +9430,21 @@ describe("api", () => {
       });
       const scimUserSession = await app.inject({ method: "GET", url: "/api/v1/auth/session", headers: { "x-user-id": userId } });
       expect(scimUserSession.statusCode).toBe(200);
-      expect(scimUserSession.json().memberships.find((member: { campaignId: string }) => member.campaignId === "camp_demo")).not.toHaveProperty("source");
+      const sessionMember = scimUserSession.json().memberships.find((member: { campaignId: string }) => member.campaignId === "camp_demo");
+      expect(sessionMember).toMatchObject({ userId, campaignId: "camp_demo" });
+      expect(sessionMember).not.toHaveProperty("source");
       expect(scimUserSession.body).not.toContain(mappingId);
       const playerMemberList = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/members", headers: { "x-user-id": "usr_demo_player" } });
       expect(playerMemberList.statusCode).toBe(200);
-      expect(playerMemberList.json().find((member: { userId: string }) => member.userId === userId)).not.toHaveProperty("source");
+      const playerMember = playerMemberList.json().find((member: { userId: string }) => member.userId === userId);
+      expect(playerMember).toMatchObject({ userId, campaignId: "camp_demo" });
+      expect(playerMember).not.toHaveProperty("source");
       expect(playerMemberList.body).not.toContain(mappingId);
+      const playerSnapshot = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/snapshot", headers: { "x-user-id": "usr_demo_player" } });
+      expect(playerSnapshot.statusCode).toBe(200);
+      const snapshotMember = playerSnapshot.json().members.find((member: { userId: string }) => member.userId === userId);
+      expect(snapshotMember).toMatchObject({ userId, campaignId: "camp_demo" });
+      expect(snapshotMember).not.toHaveProperty("source");
       const managerMemberList = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/members", headers: adminHeaders });
       expect(managerMemberList.json().find((member: { userId: string }) => member.userId === userId)).toMatchObject({ source: { type: "scim_group", groupId, mappingId } });
 
@@ -11450,24 +11460,25 @@ describe("api", () => {
   it("caps scene walls and lights at the editable scene ceiling", async () => {
     const store = new MemoryStateStore();
     const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
-    scene.walls = Array.from({ length: 10_000 }, (_, index) => ({ id: `wall_cap_${index}`, x1: index % 100, y1: 0, x2: index % 100, y2: 10, blocksVision: true, blocksMovement: true, kind: "wall" as const }));
-    scene.lights = Array.from({ length: 5_000 }, (_, index) => ({ id: `light_cap_${index}`, x: 10, y: 10, radius: 20, color: "#facc15", intensity: 0.2, kind: "light" as const, magical: false }));
+    scene.walls = Array.from({ length: MAX_SCENE_WALLS }, (_, index) => ({ id: `wall_cap_${index}`, x1: index % 100, y1: 0, x2: index % 100, y2: 10, blocksVision: true, blocksMovement: true, kind: "wall" as const }));
+    scene.lights = Array.from({ length: MAX_SCENE_LIGHTS }, (_, index) => ({ id: `light_cap_${index}`, x: 10, y: 10, radius: 20, color: "#facc15", intensity: 0.2, kind: "light" as const, magical: false }));
     const app = await buildApp({ store });
     const wall = await app.inject({ method: "POST", url: "/api/v1/scenes/scn_vault_entry/walls", headers: authHeaders, payload: { x1: 10, y1: 10, x2: 200, y2: 10 } });
     expect(wall.statusCode).toBe(400);
-    expect(wall.json().message).toContain("limited to 10000");
+    expect(wall.json().message).toContain(`limited to ${MAX_SCENE_WALLS}`);
     const light = await app.inject({ method: "POST", url: "/api/v1/scenes/scn_vault_entry/lights", headers: authHeaders, payload: { x: 100, y: 100 } });
     expect(light.statusCode).toBe(400);
-    expect(light.json().message).toContain("limited to 5000");
-    expect(scene.walls).toHaveLength(10_000);
-    expect(scene.lights).toHaveLength(5_000);
+    expect(light.json().message).toContain(`limited to ${MAX_SCENE_LIGHTS}`);
+    expect(scene.walls).toHaveLength(MAX_SCENE_WALLS);
+    expect(scene.lights).toHaveLength(MAX_SCENE_LIGHTS);
     const oversizedScene = await app.inject({
       method: "POST",
       url: "/api/v1/campaigns/camp_demo/scenes",
       headers: authHeaders,
-      payload: { name: "Too Many Walls", walls: Array.from({ length: 10_001 }, () => ({})) }
+      payload: { name: "Too Many Walls", walls: [...scene.walls, { ...scene.walls[0]!, id: "wall_over_cap" }] }
     });
     expect(oversizedScene.statusCode).toBe(400);
+    expect(oversizedScene.json().message).toContain(`at most ${MAX_SCENE_WALLS}`);
     expect(store.state.scenes.some((item) => item.name === "Too Many Walls")).toBe(false);
     await app.close();
   });
@@ -11540,6 +11551,9 @@ describe("api", () => {
     expect(playerSceneList.json().some((entry: Record<string, unknown>) => "fogHistory" in entry)).toBe(false);
     const gmScene = await app.inject({ method: "GET", url: "/api/v1/scenes/scn_vault_entry", headers: authHeaders });
     expect(gmScene.json().fogHistory.length).toBeGreaterThan(0);
+    const playerPing = await app.inject({ method: "POST", url: "/api/v1/scenes/scn_vault_entry/annotations", headers: playerHeaders, payload: { kind: "ping", points: [{ x: 10, y: 10 }] } });
+    expect(playerPing.statusCode).toBe(200);
+    expect(playerPing.json()).not.toHaveProperty("fogHistory");
 
     const blockedPlayerUndo = await app.inject({
       method: "POST",
@@ -32294,7 +32308,7 @@ registerCommand("/state", (input) => {
         retryAttempts: 1,
         eventCount: 0,
         toolCallCount: 0,
-        providerError: "upstream timeout after 30s"
+        providerError: "upstream timeout after 30s: private provider diagnostic"
       });
       const staleRunningThread = createTimestamped("thr", {
         campaignId: "camp_demo",
@@ -32557,7 +32571,6 @@ registerCommand("/state", (input) => {
                 campaignId: "camp_demo",
                 campaignName: "The Ember Vault",
                 provider: "codex-ops-test",
-                threadTitle: "Record a Codex operations smoke test.",
                 threadStatus: "completed",
                 toolName: "read_compendium",
                 error: "tool_failed",
@@ -32688,7 +32701,7 @@ registerCommand("/state", (input) => {
             staleRunningThreadCount: 1,
             providerErrorCount: 1,
             durationMsSummary: expect.objectContaining({ count: 3, p95: expect.any(Number), max: expect.any(Number) }),
-            recentErrorMessages: ["upstream timeout after 30s"]
+            recentErrorMessages: ["provider_timeout"]
           })
         ],
         toolCatalog: expect.objectContaining({
@@ -32984,7 +32997,7 @@ registerCommand("/state", (input) => {
           ],
           providerErrors: [
             {
-              message: "upstream timeout after 30s",
+              message: "provider_timeout",
               count: 1,
               recentThreads: [
                 expect.objectContaining({
@@ -32992,7 +33005,6 @@ registerCommand("/state", (input) => {
                   campaignId: "camp_demo",
                   campaignName: "The Ember Vault",
                   provider: "codex-ops-test",
-                  title: "Failed provider thread",
                   status: "failed",
                   failedAt: "2026-05-06T00:00:01.000Z",
                   retryAttempts: 1,
@@ -33017,7 +33029,6 @@ registerCommand("/state", (input) => {
                 campaignId: "camp_demo",
                 campaignName: "The Ember Vault",
                 provider: "codex-ops-test",
-                threadTitle: "Record a Codex operations smoke test.",
                 threadStatus: "completed",
                 toolName: "read_compendium",
                 error: "tool_failed",
@@ -33065,11 +33076,16 @@ registerCommand("/state", (input) => {
       expect(JSON.stringify(operations.json())).not.toContain("OPENAI_API_KEY");
       // Server admins see operational telemetry, not campaign prompts, replies or tool payloads.
       for (const thread of operations.json().recentThreads) {
-        for (const field of ["prompt", "assistantMessage", "sources", "citations", "citationWarnings", "contextScopes", "advertisedTools"]) expect(thread).not.toHaveProperty(field);
+        for (const field of ["title", "userId", "providerError", "prompt", "assistantMessage", "sources", "citations", "citationWarnings", "contextScopes", "advertisedTools"]) expect(thread).not.toHaveProperty(field);
       }
       for (const toolCall of operations.json().recentToolCalls) {
         expect(toolCall).not.toHaveProperty("input");
-        if (toolCall.output !== undefined) expect(Object.keys(toolCall.output)).toEqual(["error"]);
+        expect(toolCall).not.toHaveProperty("output");
+        expect(toolCall).not.toHaveProperty("threadTitle");
+      }
+      expect(operations.json().recentToolCalls).toContainEqual(expect.objectContaining({ id: retryableCompendiumFailure.id, error: "tool_failed" }));
+      for (const privateText of [thread.json().thread.title, failedThread.title, staleRunningThread.title, slowCompletedThread.title, failedThread.providerError]) {
+        expect(operations.body).not.toContain(privateText);
       }
       expect(JSON.stringify(operations.json().recentToolCalls)).not.toContain("Ops Check");
       expect(store.state.auditLogs.map((log) => log.action)).toContain("admin.aiOperations.inspect");
@@ -33472,12 +33488,23 @@ registerCommand("/state", (input) => {
         after: { dryRun: false, campaignId: "camp_demo", toolCallId: retryableCompendiumFailure.id, matched: 1, retried: 1, skipped: 0, completed: 1, failed: 0 }
       });
 
+      const privateToolError = "private diagnostic from a stored tool result";
+      const replayResult = store.state.aiToolCalls.find((call) => call.id === toolRetry.json().toolCalls[0].resultCallId)!;
+      replayResult.output = { error: privateToolError };
+      const historicalFailure = createTimestamped("tool", {
+        threadId: thread.json().thread.id, toolName: "read_compendium", status: "failed" as const,
+        input: {}, output: { error: privateToolError },
+      });
+      store.state.aiToolCalls.push(historicalFailure);
       const replayOperations = await app.inject({
         method: "GET",
         url: "/api/v1/admin/ai/operations",
         headers: adminHeaders
       });
       expect(replayOperations.statusCode).toBe(200);
+      expect(replayOperations.body).not.toContain(privateToolError);
+      expect(replayOperations.body).not.toContain(thread.json().thread.title);
+      expect(replayOperations.json().recentToolCalls).toContainEqual(expect.objectContaining({ id: historicalFailure.id, error: "unknown_failure" }));
       expect(replayOperations.json().replayOperations).toMatchObject({
         replayedToolCallCount: 2,
         completedReplayCount: 2,
@@ -33494,7 +33521,8 @@ registerCommand("/state", (input) => {
             toolName: "read_compendium",
             originalError: "tool_failed",
             resultCallId: toolRetry.json().toolCalls[0].resultCallId,
-            resultStatus: "completed"
+            resultStatus: "completed",
+            resultError: "unknown_failure"
           })
         ]),
         recentRuns: expect.arrayContaining([

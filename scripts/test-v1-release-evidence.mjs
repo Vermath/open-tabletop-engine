@@ -53,6 +53,15 @@ test("v1 release evidence requires four gates and no external GM report", () => 
     });
   }
 
+  function checkFixture(file, content, gate, shouldPass) {
+    writeFileSync(join(dir, file), content);
+    const run = verify();
+    const diagnostic = [content, run.stdout, run.stderr].join("\n");
+    assert.equal(run.status, shouldPass ? 0 : 1, diagnostic);
+    assert.ok(run.stdout.includes(`${shouldPass ? "PASS" : "FAIL"}: ${gate}`), diagnostic);
+    if (!shouldPass) assert.match(run.stderr, /1 blocker\(s\) remain/, diagnostic);
+  }
+
   try {
     mkdirSync(dir, { recursive: true });
     const fixtures = {
@@ -65,18 +74,61 @@ test("v1 release evidence requires four gates and no external GM report", () => 
     assert.equal(complete.status, 0, complete.stdout + complete.stderr);
     assert.doesNotMatch(complete.stdout, /external GM/i);
 
+    const hostedEvidenceFile = "release-workflow-evidence.md";
+    const ipv6Smoke = smoke.replace("github.com", "[2606:4700:4700::1111]");
+    checkFixture(hostedEvidenceFile, ipv6Smoke + "\n" + docs, "Hosted release-smoke on checked commit", true);
+    writeFileSync(join(dir, hostedEvidenceFile), fixtures[hostedEvidenceFile]);
+
     for (const [file, incomplete, expected] of [
       ["identity-provider-smoke-evidence.md", "", "Live OIDC/SCIM provider smoke"],
       ["accessibility-assistive-tech-pass.md", "", "Manual assistive-technology matrix"],
       ["release-workflow-evidence.md", docs, "Hosted release-smoke on checked commit"],
       ["release-workflow-evidence.md", smoke, "Public docs publication"]
     ]) {
-      writeFileSync(join(dir, file), incomplete);
-      const failed = verify();
-      assert.equal(failed.status, 1, failed.stdout + failed.stderr);
-      assert.ok(failed.stdout.includes(`FAIL: ${expected}`), failed.stdout);
-      assert.match(failed.stderr, /1 blocker\(s\) remain/);
+      checkFixture(file, incomplete, expected, false);
       writeFileSync(join(dir, file), fixtures[file]);
+    }
+
+    const identityFile = "identity-provider-smoke-evidence.md";
+    for (const [note, shouldPass] of [
+      ["- Skipped checks: none", true],
+      ["- Notes: No checks were skipped.", true],
+      ["- Notes: The smoke was not skipped.", true],
+      ["- SCIM Users/Groups provisioning check, if performed: not run", true],
+      ["~~~text\nTests 1 passed | 0 skipped\n~~~", true],
+      ["- Notes: Smoke skipped: missing provider credentials", false],
+      ["- Notes: Tests 1 skipped", false],
+      ["- Notes: No checks were skipped yesterday. Smoke skipped: missing credentials today.", false],
+      ["- Notes: Required smoke not run", false],
+      ["```text\n## Console output\npnpm identity:smoke was skipped due to missing provider credentials\n```", false]
+    ]) {
+      checkFixture(identityFile, identity + note, "Live OIDC/SCIM provider smoke", shouldPass);
+    }
+    checkFixture(identityFile, "~~~md\n" + identity + "~~~", "Live OIDC/SCIM provider smoke", false);
+    writeFileSync(join(dir, identityFile), identity);
+
+    const override = [
+      "## Assistive Technology Owner-Approved Descope: Windows matrix",
+      "- App build or commit: " + commit,
+      "- Owner-approved descope: Release owner accepted the documented matrix change for this release candidate.",
+      "- Required environments replaced or removed: NVDA with Firefox",
+      "- Reason: The Windows test machine was unavailable"
+    ].join("\n");
+    const substitution = override.replaceAll(/descope/gi, "substitution");
+    const accessibilityFile = "accessibility-assistive-tech-pass.md";
+    for (const [content, shouldPass] of [
+      [override, true],
+      [substitution, true],
+      [substitution.replace("Owner-approved substitution:", "Owner-approved substitute:"), true],
+      [override.replace("NVDA with Firefox", "-"), false],
+      [override.replace("The Windows test machine was unavailable", "..."), false],
+      [override.replace("NVDA with Firefox", ""), false],
+      [substitution.replace(commit, "0".repeat(40)), false],
+      [substitution.replace("owner accepted", "owner did not accept"), false],
+      ["~~~md\n" + substitution + "\n~~~", false],
+      [accessibility + "\n- Owner-approved substitution:\n- Notes: current release", false]
+    ]) {
+      checkFixture(accessibilityFile, content, "Manual assistive-technology matrix", shouldPass);
     }
   } finally {
     rmSync(root, { recursive: true, force: true });

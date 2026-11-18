@@ -14,6 +14,9 @@ describe("safeLightCssColor", () => {
     "expression(alert(1))",
     "",
     undefined,
+    null,
+    {},
+    17,
   ])("replaces the unsafe value %s with the default light colour", (color) => {
     expect(safeLightCssColor(color)).toBe("#facc15");
   });

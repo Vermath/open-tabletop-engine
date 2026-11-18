@@ -42,6 +42,54 @@ class ReplaceObservingMemoryStateStore extends MemoryStateStore {
 }
 
 describe("feature completeness regressions", () => {
+  it("keeps provisioning source private when an existing member accepts an invite", async () => {
+    const store = new MemoryStateStore();
+    const member = store.state.members.find((entry) => entry.campaignId === "camp_demo" && entry.userId === "usr_demo_player")!;
+    member.source = { type: "scim_group", groupId: "grp_players", mappingId: "map_players" };
+    const { token } = seedSession(store, member.userId);
+    const app = await buildApp({ store });
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const reader = await openRealtime(app, token);
+    try {
+      const invite = await app.inject({ method: "POST", url: "/api/v1/campaigns/camp_demo/invites", headers: gmHeaders, payload: { role: member.role } });
+      expect(invite.statusCode, invite.body).toBe(200);
+      const accepted = await app.inject({ method: "POST", url: "/api/v1/invites/accept", headers: { authorization: `Bearer ${token}` }, payload: { token: invite.json().token } });
+      expect(accepted.statusCode, accepted.body).toBe(200);
+      expect(accepted.json().membership).toMatchObject({ id: member.id });
+      expect(accepted.json().membership).not.toHaveProperty("source");
+      const event = await reader.waitFor("campaign.member.joined", member.userId);
+      expect(event.payload).toMatchObject({ id: member.id });
+      expect(event.payload).not.toHaveProperty("source");
+    } finally {
+      reader.close();
+      await app.close();
+    }
+  });
+
+  it("omits fog undo history from a deleted scene delivered to a reader", async () => {
+    const store = new MemoryStateStore();
+    const { token } = seedSession(store, "usr_demo_player");
+    const scene = structuredClone(store.state.scenes.find((entry) => entry.id === "scn_vault_entry")!);
+    scene.id = "scn_realtime_history";
+    scene.active = false;
+    scene.permissions = { usr_demo_player: ["scene.read"] };
+    scene.fogHistory = [createTimestamped("fog_history", { sceneId: scene.id, actorUserId: "usr_demo_gm", action: "delete" as const, fogId: "fog_retired" })];
+    store.state.scenes.push(scene);
+    const app = await buildApp({ store });
+    await app.listen({ host: "127.0.0.1", port: 0 });
+    const reader = await openRealtime(app, token);
+    try {
+      const removed = await app.inject({ method: "DELETE", url: `/api/v1/scenes/${scene.id}`, headers: gmHeaders });
+      expect(removed.statusCode, removed.body).toBe(200);
+      const event = await reader.waitFor("scene.deleted", scene.id);
+      expect(event.payload).toMatchObject({ id: scene.id });
+      expect(event.payload).not.toHaveProperty("fogHistory");
+    } finally {
+      reader.close();
+      await app.close();
+    }
+  });
+
   it("validates campaign updates and emits complete campaign and encounter lifecycle signals", async () => {
     const store = new CountingMemoryStateStore();
     const { token } = seedSession(store, "usr_demo_gm");

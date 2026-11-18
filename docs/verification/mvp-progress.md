@@ -1105,7 +1105,7 @@ This document tracks verified MVP progress without treating the whole PRD as com
 ### Asset Security Scanning Slice
 
 - Implementation:
-  - Added a built-in upload scanner that runs after size validation and before quota checks, asset record creation, or local/S3 storage writes.
+  - Added a built-in upload scanner that runs after size validation and before asset record creation or local/S3 storage writes. New originals must fit the campaign quota before scanning, and the final check includes renditions.
   - Clean uploaded assets now persist `MapAsset.security` metadata with scanner name, scan timestamp, clean status, and findings.
   - Blocked uploads return `422 asset_security_blocked` with scanner findings and do not create asset records or stored object bytes.
   - The scanner blocks EICAR test signatures, active SVG content such as scripts/event handlers/javascript URLs/`foreignObject`, executable/script/HTML MIME types, disallowed executable/script extensions, and HTML/script bodies disguised as generic uploads.
@@ -1132,7 +1132,7 @@ This document tracks verified MVP progress without treating the whole PRD as com
 ### External Asset Trust Scanner Slice
 
 - Implementation:
-  - Added optional `OTTE_ASSET_TRUST_WEBHOOK_URL` upload scanning after the built-in scanner passes and before quota checks, asset record creation, or local/S3 storage writes.
+  - Added optional `OTTE_ASSET_TRUST_WEBHOOK_URL` upload scanning after the built-in scanner passes and before asset record creation or local/S3 storage writes. New originals must first pass the initial quota check.
   - The API posts `name`, `mimeType`, `sizeBytes`, `checksum`, and `contentBase64` to the scanner, with optional bearer auth from `OTTE_ASSET_TRUST_WEBHOOK_TOKEN`.
   - Scanner responses support `status: "clean"` or `status: "blocked"` plus optional scanner names and findings; blocked responses and high-severity findings reject the upload with `422 asset_security_blocked`.
   - Scanner HTTP errors, invalid responses, and timeouts fail closed by default through `OTTE_ASSET_TRUST_FAIL_CLOSED=true`; deployments can explicitly opt into fail-open behavior.
