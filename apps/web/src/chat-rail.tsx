@@ -135,7 +135,7 @@ function CampaignChatRail(props: ChatRailProps) {
           )}
         </details>
         <span>{props.notificationPreference === "all" ? "All message alerts" : props.notificationPreference === "mentions" ? "Mention & whisper alerts" : "Alerts muted"}</span>
-        {props.tables && props.onTableMutation && <RollableTablesPanel tables={props.tables} canManage={Boolean(props.canManageTables)} canDraw={Boolean(props.canRollDice && props.canWrite)} mutate={props.onTableMutation} />}
+        {props.tables && props.onTableMutation && <RollableTablesPanel key={JSON.stringify([props.campaignId, props.currentUserId, Boolean(props.canManageTables)])} tables={props.tables.filter((table) => table.campaignId === props.campaignId && (props.canManageTables || table.visibility === "public"))} canManage={Boolean(props.canManageTables)} canDraw={Boolean(props.canRollDice && props.canWrite)} mutate={props.onTableMutation} />}
       </div>
       <form
         className="dice-box chat-dice-box"

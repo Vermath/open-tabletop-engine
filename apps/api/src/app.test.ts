@@ -492,6 +492,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   if (path.includes("/chat/messages")) return method === "GET" ? { tools: ["read_chat"] } : method === "POST" ? { tools: ["send_chat_message", "create_proposal"] } : { tools: ["create_proposal"] };
   if (path.includes("/dice/roll")) return { tools: ["roll_dice"] };
   if (path.includes("/rolls")) return { tools: ["read_roll"] };
+  if (path.includes("/rollable-tables")) return { excluded: "human_table_authoring_and_chat_draws" };
   if (path.includes("/dice-macros")) return method === "GET" ? { tools: ["read_dice_macro"] } : { tools: ["draft_dice_macro", "create_proposal"] };
   if (path.includes("/campaigns/{campaignId}/audio") || path.includes("/audio/{trackId}")) return { excluded: "audio_soundboard" };
   if (path.includes("/campaigns/{campaignId}/encounters") || path.includes("/encounters/{encounterId}")) return method === "GET" ? { tools: ["read_encounter"] } : { tools: ["draft_encounter", "create_proposal"] };
@@ -12298,6 +12299,10 @@ describe("api", () => {
       createdAt: "2026-05-01T00:00:00.000Z",
       updatedAt: "2026-05-01T00:00:00.000Z"
     } satisfies Scene;
+    store.state.rollableTables.push(createTimestamped("tbl", {
+      id: "tbl_auth_matrix", campaignId: "camp_demo", name: "Dice treasure", category: "loot" as const, visibility: "public" as const,
+      entries: [{ text: "Gold", weight: 1 }],
+    }));
     store.state.assets.push(authMatrixAsset);
     store.state.worlds.push(authMatrixWorld);
     store.state.handouts.push(authMatrixHandout);
@@ -12571,6 +12576,11 @@ describe("api", () => {
       { method: "POST", url: "/api/v1/dice/roll", payload: { campaignId: "camp_demo", formula: "1d20" } },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/rolls" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/rolls/roll_auth_matrix/verify" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/rollable-tables" },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/rollable-tables", payload: { name: "Loot", category: "loot", visibility: "gm_only", entries: [{ text: "Gold", weight: 1 }] } },
+      { method: "PATCH", url: "/api/v1/campaigns/camp_demo/rollable-tables/tbl_auth_matrix", payload: { name: "Loot edit", expectedUpdatedAt: "2026-05-01T00:00:00.000Z" } },
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/rollable-tables/tbl_auth_matrix/draw", payload: { visibility: "public" } },
+      { method: "DELETE", url: "/api/v1/campaigns/camp_demo/rollable-tables/tbl_auth_matrix?expectedUpdatedAt=2026-05-01T00%3A00%3A00.000Z" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/dice-macros" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/dice-macros", payload: { name: "No Auth Macro", formula: "1d4" } },
       { method: "PATCH", url: "/api/v1/dice-macros/mac_demo_attack", payload: { name: "No Auth Macro Rename" } },
@@ -12942,6 +12952,7 @@ describe("api", () => {
       ["GET /api/v1/scenes/{sceneId}/fog/history", "fog history requires token reveal"],
       ["GET /api/v1/journal/{entryId}/history", "journal history requires secret journal access"],
       ["GET /api/v1/campaigns/{campaignId}/dice-macros", "macro roster requires dice rolling"],
+      ["GET /api/v1/campaigns/{campaignId}/rollable-tables", "table roster requires dice rolling or campaign management"],
       ["GET /api/v1/campaigns/{campaignId}/ai/threads", "AI thread roster requires AI proposal permission"],
       ["GET /api/v1/campaigns/{campaignId}/ai/usage", "AI usage requires AI proposal permission"],
       ["GET /api/v1/campaigns/{campaignId}/ai/evaluations", "AI evaluations require AI proposal permission"],
@@ -13446,6 +13457,7 @@ describe("api", () => {
       let revisionProperty = "expectedUpdatedAt";
 
       const campaignChild = /^\/api\/v1\/campaigns\/([^/]+)\/(?:worlds|scenes|actors|items|handouts|encounters|combats(?:\/start)?)$/.exec(pathname);
+      const rollableTableMutation = /^\/api\/v1\/campaigns\/[^/]+\/rollable-tables\/([^/]+)$/.exec(pathname);
       const campaignVersionedCreate = /^\/api\/v1\/campaigns\/([^/]+)\/(?:world-records|world-relations)$/.exec(pathname);
       const campaignMutation = /^\/api\/v1\/campaigns\/([^/]+)(?:\/(?:archive|restore))?$/.exec(pathname);
       const campaignOwnershipOrCopy = /^\/api\/v1\/campaigns\/([^/]+)\/(?:ownership-transfer|duplicate)$/.exec(pathname);
@@ -13469,6 +13481,7 @@ describe("api", () => {
       const aiToolCallMutation = /^\/api\/v1\/campaigns\/[^/]+\/ai\/tool-calls\/([^/]+)\/retry$/.exec(pathname);
 
       if (campaignChild?.[1]) revision = store.state.campaigns.find((record) => record.id === campaignChild[1])?.updatedAt;
+      else if (rollableTableMutation?.[1]) revision = store.state.rollableTables.find((record) => record.id === rollableTableMutation[1])?.updatedAt;
       else if (campaignVersionedCreate?.[1]) {
         revision = store.state.campaigns.find((record) => record.id === campaignVersionedCreate[1])?.updatedAt;
         revisionProperty = "expectedCampaignUpdatedAt";

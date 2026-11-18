@@ -342,7 +342,7 @@ import { activeCombatForTypedDamage, dndTypedDamageCombatantChanges } from "./dn
 import { registerSceneDelegationRoutes } from "./scene-delegation-routes.js";
 import { exceedsSceneVisionBudget, MAX_SCENE_LIGHTS, MAX_SCENE_WALLS, SceneVisionBudgetError } from "./scene-vision-budget.js";
 import { registerUniversalVttImportRoute } from "./universal-vtt-import.js";
-import { drawTableEntry, validatedTable, visibleRollableTables } from "./rollable-tables.js";
+import { drawTableEntry, publishTableChange, validatedTable, visibleRollableTables } from "./rollable-tables.js";
 import { registerCampaignSessionRoutes } from "./campaign-session-routes.js";
 import { registerCampaignWebhookRoutes } from "./campaign-webhook-routes.js";
 import { CAMPAIGN_WEBHOOK_QUEUE_MAX_PENDING_DELIVERIES, CAMPAIGN_WEBHOOK_SUBSCRIPTION_LIMIT_PER_CAMPAIGN, createCampaignWebhookDelivery, pruneCampaignWebhookCampaignLedger, pruneCampaignWebhookDeliveryLedger, pruneCampaignWebhookLedgers } from "./campaign-webhook-ledger.js";
@@ -6934,11 +6934,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
 
   type TableParams = { campaignId: string; tableId: string };
   const getTable = ({ campaignId, tableId }: TableParams) => store.state.rollableTables.find((table) => table.id === tableId && table.campaignId === campaignId);
-  function tablesChanged(campaignId: string, userId: string) {
-    const campaign = store.state.campaigns.find((item) => item.id === campaignId)!;
-    store.save();
-    broadcast(createEvent({ campaignId, type: "campaign.updated", actorUserId: userId, targetId: campaign.id, payload: campaign }));
-  }
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/rollable-tables", async (request, reply) => {
     const { campaignId } = request.params;
@@ -6959,7 +6954,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (!input) return badRequest(reply, "Provide a name, category, visibility and 1–100 text entries with integer weights from 1 to 10000");
     const table = createTimestamped("tbl", { campaignId, ...input }) satisfies RollableTable;
     store.state.rollableTables.push(table);
-    tablesChanged(campaignId, currentUserId(store, request.headers)!);
+    publishTableChange(store, campaignId, currentUserId(store, request.headers)!, broadcast);
     return table;
   });
 
@@ -6974,7 +6969,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const input = validatedTable({ ...table, ...request.body });
     if (!input) return badRequest(reply, "Invalid rollable table definition");
     Object.assign(table, input, { updatedAt: nextRevisionTimestamp(table.updatedAt) });
-    tablesChanged(table.campaignId, currentUserId(store, request.headers)!);
+    publishTableChange(store, table.campaignId, currentUserId(store, request.headers)!, broadcast);
     return table;
   });
 
@@ -6987,7 +6982,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const revision = requireExpectedRevision(reply, { resourceType: "rollable_table", resourceId: table.id, currentUpdatedAt: table.updatedAt, expectedUpdatedAt: request.query.expectedUpdatedAt, current: table, label: "Rollable table" });
     if (revision !== true) return revision;
     store.state.rollableTables = store.state.rollableTables.filter((item) => item.id !== table.id);
-    tablesChanged(table.campaignId, currentUserId(store, request.headers)!);
+    publishTableChange(store, table.campaignId, currentUserId(store, request.headers)!, broadcast);
     return table;
   });
 

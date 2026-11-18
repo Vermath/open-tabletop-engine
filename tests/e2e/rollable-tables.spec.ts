@@ -10,6 +10,7 @@ async function signIn(page: Page, account: "gm" | "player") {
   expect(response.ok()).toBe(true);
   const { user } = await response.json();
   await page.evaluate((id) => {
+    localStorage.setItem("otte:selectedCampaignId", "camp_demo");
     localStorage.setItem("otte:userId", id);
     localStorage.setItem("otte:sessionTransport", "cookie");
   }, user.id);
@@ -100,5 +101,38 @@ test("GM authors weighted results, controls chat visibility and invalidates a pl
     await expect(result).toHaveCount(2);
   } finally {
     await playerContext.close();
+  }
+});
+
+test("a private table draft stays with its original campaign", async ({ page, request }) => {
+  const gm = { "x-user-id": "usr_demo_gm" };
+  const headers = () => ({ ...gm, "idempotency-key": randomUUID() });
+  const name = "Table draft destination " + randomUUID().slice(0, 6);
+  const created = await request.post(api + "/campaigns", { headers: headers(), data: { name } });
+  expect(created.ok(), await created.text()).toBe(true);
+  const campaign = await created.json();
+  const url = api + "/campaigns/" + campaign.id;
+  try {
+    await signIn(page, "gm");
+    const panel = page.locator("details.rollable-tables");
+    await panel.locator("summary").click();
+    await panel.getByRole("button", { name: "New table" }).click();
+    await panel.getByLabel("Table name").fill("Secret from the first campaign");
+    await panel.getByLabel("Result 1", { exact: true }).fill("Hidden encounter");
+    await page.locator("details.campaign-switcher > summary").click();
+    await page.getByRole("navigation", { name: "Campaigns" }).getByRole("button", { name, exact: true }).click();
+    await expect(page.getByLabel("Current campaign", { exact: true })).toHaveText(name);
+    await selectInspectorPanel(page, "Chat");
+    await expect(panel.getByRole("button", { name: "Save table" })).toHaveCount(0);
+    await panel.locator("summary").click();
+    await panel.getByRole("button", { name: "New table" }).click();
+    await expect(panel.getByLabel("Table name")).toHaveValue("");
+    await expect(panel.getByLabel("Result 1", { exact: true })).toHaveValue("");
+    const received = await request.get(url + "/rollable-tables", { headers: gm });
+    expect(await received.json()).toEqual([]);
+  } finally {
+    const current = await (await request.get(url, { headers: gm })).json();
+    const removed = await request.delete(url, { headers: headers(), params: { expectedUpdatedAt: current.updatedAt } });
+    expect(removed.ok(), await removed.text()).toBe(true);
   }
 });
