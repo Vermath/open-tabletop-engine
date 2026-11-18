@@ -838,6 +838,9 @@ interface CampaignPermissionTemplate {
 }
 
 const MAX_FOG_HISTORY_ENTRIES = 100;
+// Every wall and light adds vision work, so editable scenes share one ceiling.
+const MAX_SCENE_WALLS = 10_000;
+const MAX_SCENE_LIGHTS = 5_000;
 const DEFAULT_SYSTEM_ID = DND_5E_SRD_SYSTEM_ID;
 const CORE_COMPATIBILITY_VERSION = "0.3.0";
 const AI_STALE_RUNNING_THREAD_MS = 15 * 60 * 1000;
@@ -1901,7 +1904,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       if (sessionCookieDeferred(request.headers)) deferSessionCookieActivation(session);
       store.save();
       flushStore(store);
-      return { status: "authenticated" as const, token, session, user: publicUser(user), memberships: store.state.members.filter((member) => member.userId === user.id), serverAdmin: isServerAdminUser(store, user.id), accountKey: normalizeEmail(user.email) ?? user.id };
+      return { status: "authenticated" as const, token, session, user: publicUser(user), memberships: store.state.members.filter((member) => member.userId === user.id).map(publicCampaignMember), serverAdmin: isServerAdminUser(store, user.id), accountKey: normalizeEmail(user.email) ?? user.id };
     });
     if (outcome.status === "unauthorized") return unauthorized(reply, "Invalid login credentials");
     if (outcome.status === "disabled") return forbidden(reply, "User account is disabled");
@@ -1970,7 +1973,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       });
       if (!sessionCookieDeferred(request.headers)) attachSessionCookie(reply, login.token, login.session);
       else markSessionCookieDeferred(reply);
-      return { token: login.token, session: publicSession(login.session), user: publicUser(login.user), memberships: store.state.members.filter((member) => member.userId === login.user.id), serverAdmin: isServerAdminUser(store, login.user.id) };
+      return { token: login.token, session: publicSession(login.session), user: publicUser(login.user), memberships: store.state.members.filter((member) => member.userId === login.user.id).map(publicCampaignMember), serverAdmin: isServerAdminUser(store, login.user.id) };
     } catch (error) {
       return unauthorized(reply, errorMessage(error));
     }
@@ -2012,7 +2015,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     if (outcome.status === "disabled") return forbidden(reply, "User account is disabled");
     if (!sessionCookieDeferred(request.headers)) attachSessionCookie(reply, outcome.token, outcome.nextSession);
     else markSessionCookieDeferred(reply);
-    return { token: outcome.token, session: publicSession(outcome.nextSession), user: publicUser(outcome.user), memberships: store.state.members.filter((member) => member.userId === outcome.user.id), serverAdmin: isServerAdminUser(store, outcome.user.id) };
+    return { token: outcome.token, session: publicSession(outcome.nextSession), user: publicUser(outcome.user), memberships: store.state.members.filter((member) => member.userId === outcome.user.id).map(publicCampaignMember), serverAdmin: isServerAdminUser(store, outcome.user.id) };
   });
 
   app.get("/api/v1/auth/mfa", async (request, reply) => {
@@ -3006,7 +3009,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
       const login = await completeOidcCallback(request, store, config, request.query.code, request.query.state, durableMutations);
       attachSessionCookie(reply, login.token, login.session);
       if (login.returnTo) return reply.redirect(ssoRedirectUrl(login.returnTo, cookieSessionBearerMarker, login.user.id));
-      return { token: login.token, session: publicSession(login.session), user: publicUser(login.user), memberships: store.state.members.filter((member) => member.userId === login.user.id), serverAdmin: isServerAdminUser(store, login.user.id), identity: publicIdentity(login.identity) };
+      return { token: login.token, session: publicSession(login.session), user: publicUser(login.user), memberships: store.state.members.filter((member) => member.userId === login.user.id).map(publicCampaignMember), serverAdmin: isServerAdminUser(store, login.user.id), identity: publicIdentity(login.identity) };
     } catch (error) {
       return unauthorized(reply, `OIDC callback failed: ${errorMessage(error)}`);
     }
@@ -3099,7 +3102,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const session = sessionFromRequest(store, undefined, request.headers);
     const user = store.state.users.find((item) => item.id === userId);
     if (!user) return unauthorized(reply, "Unknown user session");
-    return { user: publicUser(user), session: session ? publicSession(session) : undefined, memberships: store.state.members.filter((member) => member.userId === userId), serverAdmin: isServerAdminUser(store, userId), serverAdmins: serverAdminRuntimePosture(store), organization: organizationWorkspaceForRequest(store, userId, request.headers), organizations: organizationWorkspaceInfos(store, userId) };
+    return { user: publicUser(user), session: session ? publicSession(session) : undefined, memberships: store.state.members.filter((member) => member.userId === userId).map(publicCampaignMember), serverAdmin: isServerAdminUser(store, userId), serverAdmins: serverAdminRuntimePosture(store), organization: organizationWorkspaceForRequest(store, userId, request.headers), organizations: organizationWorkspaceInfos(store, userId) };
   });
 
   app.get("/api/v1/auth/profile", async (request, reply) => {
@@ -3416,7 +3419,12 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/members", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "campaign.read");
     if (allowed !== true) return allowed;
-    return store.state.members.filter((member) => member.campaignId === request.params.campaignId).map((member) => memberSessionInfo(store, member));
+    // SCIM sources name identity-provider groups and mappings; only campaign managers need them.
+    const includeSource = canCampaign(store, currentUserId(store, request.headers)!, request.params.campaignId, "campaign.update");
+    return store.state.members.filter((member) => member.campaignId === request.params.campaignId).map((member) => {
+      const info = memberSessionInfo(store, member);
+      return includeSource ? info : publicCampaignMember(info);
+    });
   });
 
   app.get<{ Params: { campaignId: string } }>("/api/v1/campaigns/:campaignId/presence", async (request, reply) => {
@@ -4101,6 +4109,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
   app.post<{ Params: { campaignId: string }; Body: Partial<Scene> }>("/api/v1/campaigns/:campaignId/scenes", async (request, reply) => {
     const allowed = requireCampaignPermission(store, reply, request.headers, request.params.campaignId, "scene.create");
     if (allowed !== true) return allowed;
+    if (request.body.walls !== undefined && (!Array.isArray(request.body.walls) || request.body.walls.length > MAX_SCENE_WALLS)) return badRequest(reply, `Scene walls must be an array of at most ${MAX_SCENE_WALLS} objects`);
+    if (request.body.lights !== undefined && (!Array.isArray(request.body.lights) || request.body.lights.length > MAX_SCENE_LIGHTS)) return badRequest(reply, `Scene lights must be an array of at most ${MAX_SCENE_LIGHTS} objects`);
     const gridFields = normalizeSceneGridFields(request.body);
     if (!gridFields.ok) return badRequest(reply, gridFields.error);
     const userId = currentUserId(store, request.headers);
@@ -4306,9 +4316,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const sourceName = displayNameFromHeader(request.headers["x-asset-name"]) ?? "Uploaded Map";
     const folder = normalizeAssetFolder(headerText(request.headers["x-asset-folder"]));
     const tags = normalizeAssetTags(headerText(request.headers["x-asset-tags"]));
+    const checksum = checksumForBuffer(body);
+    // Reject uploads that cannot fit before any external scanner sees the bytes;
+    // the full check below still counts renditions once they are built.
+    const duplicateCandidate = reusableUploadedAsset(store, request.params.campaignId, checksum, body.length, mimeType);
+    const quotaPrecheck = duplicateCandidate ? undefined : assetQuotaExceeded(store, request.params.campaignId, body.length);
+    if (quotaPrecheck) return reply.code(413).send(quotaPrecheck);
     const scan = await scanUploadedAsset(body, mimeType, sourceName, { externalTransport: options.assetScannerTransport });
     if (scan.blocked) return assetSecurityBlocked(reply, scan);
-    const checksum = checksumForBuffer(body);
     const duplicate = reusableUploadedAsset(store, request.params.campaignId, checksum, body.length, mimeType);
     if (duplicate) {
       let mapCalibrationReset = false;
@@ -5177,6 +5192,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const allowed = requireScenePermission(store, reply, request.headers, scene, "scene.update");
     if (allowed !== true) return allowed;
+    if (scene.walls.length >= MAX_SCENE_WALLS) return badRequest(reply, `Scene walls are limited to ${MAX_SCENE_WALLS}`);
     const normalized = normalizeWallPatch(request.body ?? {});
     if ("error" in normalized) return badRequest(reply, normalized.error);
     if (normalized.patch.x1 === undefined || normalized.patch.y1 === undefined || normalized.patch.x2 === undefined || normalized.patch.y2 === undefined) {
@@ -5253,6 +5269,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<FastifyIn
     const scene = store.state.scenes.find((item) => item.id === request.params.sceneId)!;
     const allowed = requireScenePermission(store, reply, request.headers, scene, "scene.update");
     if (allowed !== true) return allowed;
+    if (scene.lights.length >= MAX_SCENE_LIGHTS) return badRequest(reply, `Scene lights are limited to ${MAX_SCENE_LIGHTS}`);
     const light = { id: createId("light"), x: request.body.x, y: request.body.y, radius: request.body.radius ?? 180, brightRadius: request.body.brightRadius, dimRadius: request.body.dimRadius, color: request.body.color ?? (request.body.kind === "darkness" ? "#111827" : "#facc15"), intensity: clampLightIntensity(request.body.intensity ?? (request.body.kind === "darkness" ? 0.82 : 0.28)), kind: request.body.kind ?? "light", magical: Boolean(request.body.magical), animation: request.body.animation };
     const normalized = normalizeLightSourcePatch(light);
     if ("error" in normalized) return badRequest(reply, normalized.error);
@@ -14125,7 +14142,7 @@ function adminAiOperations(store: StateStore, aiProvider: AiProvider) {
     risk,
     campaigns,
     recentEvaluations: store.state.aiEvaluations.slice().sort(sortTimestampsDesc).slice(0, 20),
-    recentThreads: store.state.aiThreads.slice().sort(sortTimestampsDesc).slice(0, 20),
+    recentThreads: store.state.aiThreads.slice().sort(sortTimestampsDesc).slice(0, 20).map((thread) => adminAiThreadInfo(thread, store.state.campaigns)),
     recentToolCalls: store.state.aiToolCalls
       .slice()
       .sort(sortTimestampsDesc)
@@ -14882,10 +14899,17 @@ function adminAiEvaluationInfo(evaluation: AiEvaluationRun, threadById: Map<stri
   return { ...evaluation, campaignName: campaign?.name, threadTitle: thread?.title, threadStatus: thread?.status, failedChecks: evaluation.checks.filter((check) => check.status === "failed") };
 }
 
+// Server-admin AI telemetry is operational: it never carries prompts, model
+// replies, sources or tool inputs/outputs from campaigns the admin may not belong to.
+function adminAiThreadInfo(thread: AiThread, campaigns: Campaign[]) {
+  return { id: thread.id, campaignId: thread.campaignId, campaignName: campaigns.find((item) => item.id === thread.campaignId)?.name, userId: thread.userId, provider: thread.provider, title: thread.title, status: thread.status, startedAt: thread.startedAt, completedAt: thread.completedAt, failedAt: thread.failedAt, durationMs: thread.durationMs, retryAttempts: thread.retryAttempts, eventCount: thread.eventCount, toolCallCount: thread.toolCallCount, providerError: sanitizeAiProviderError(thread.providerError), usage: thread.usage, createdAt: thread.createdAt, updatedAt: thread.updatedAt };
+}
+
 function adminAiToolCallInfo(call: AiToolCall, threadById: Map<string, AiThread>, campaigns: Campaign[]) {
   const thread = threadById.get(call.threadId);
   const campaign = thread ? campaigns.find((item) => item.id === thread.campaignId) : undefined;
-  return { ...call, campaignId: thread?.campaignId, campaignName: campaign?.name, provider: thread?.provider, threadTitle: thread?.title, threadStatus: thread?.status };
+  const errorCode = aiToolErrorCode(call.output);
+  return { id: call.id, threadId: call.threadId, toolName: call.toolName, status: call.status, durationMs: call.durationMs, retry: call.retry, output: errorCode ? { error: errorCode } : undefined, createdAt: call.createdAt, updatedAt: call.updatedAt, campaignId: thread?.campaignId, campaignName: campaign?.name, provider: thread?.provider, threadTitle: thread?.title, threadStatus: thread?.status };
 }
 
 function aiProviderRuntimeConfig(aiProvider: AiProvider) {
@@ -19162,8 +19186,8 @@ function normalizeScenePatch(rawBody: unknown): { ok: true; value: ScenePatchBod
   }
   for (const [field, maximum] of [
     ["fog", 5_000],
-    ["walls", 10_000],
-    ["lights", 5_000],
+    ["walls", MAX_SCENE_WALLS],
+    ["lights", MAX_SCENE_LIGHTS],
     ["annotations", 10_000],
   ] as const) {
     if (!(field in rawBody)) continue;
@@ -22049,6 +22073,10 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
     if (readableScene && !canReadSceneRecord(store, userId, readableScene)) return undefined;
     if (!readableScene && !canAccessPreparedScenes(store, userId, event.campaignId)) return undefined;
     if (scene && Array.isArray(scene.annotations)) return redactedRealtimeEvent(event, scenePayloadForUser(store, userId, scene as Scene));
+    if (scene && "fogHistory" in scene && !canCampaign(store, userId, event.campaignId, "token.reveal")) {
+      const { fogHistory: _fogHistory, ...playerScene } = scene;
+      return { ...event, payload: withoutSceneEditHistory(playerScene as Scene) };
+    }
     if (scene && "sceneEditHistory" in scene) return { ...event, payload: withoutSceneEditHistory(scene as Scene) };
     return event;
   }
@@ -22378,6 +22406,11 @@ function campaignPermissionTemplate(value: unknown): CampaignPermissionTemplate 
 function campaignPermissionTemplateGrants(campaignId: string, templateId: CampaignPermissionTemplateId): PermissionGrant[] {
   const template = campaignPermissionTemplates[templateId];
   return template.grants.map((grant) => createTimestamped("grant", { subjectType: "role" as const, subjectId: grant.role, campaignId, permissions: grant.permissions, metadata: { source: "campaign_permission_template", templateId, ...(templateId === "ai_assisted" ? { aiUseTemplateVersion: 1 } : {}) } }));
+}
+
+function publicCampaignMember<T extends CampaignMember>(member: T): Omit<T, "source"> {
+  const { source: _source, ...publicMember } = member;
+  return publicMember;
 }
 
 function memberSessionInfo(store: StateStore, member: CampaignMember): CampaignMember & { user: Pick<User, "id" | "displayName" | "email">; active: boolean; permissions: PermissionName[] } {
@@ -24185,13 +24218,15 @@ function scenePayloadForUser(store: StateStore, userId: string, scene: Scene): S
       canCampaign(store, userId, scene.campaignId, "token.reveal"), (pin) => canReadMapPinTarget(store, userId, scene.campaignId, pin));
   }
   if (canCampaign(store, userId, scene.campaignId, "token.reveal")) return result;
+  // Fog history records hidden and since-removed fog geometry; it is GM data, like GET /fog/history.
+  const { fogHistory: _fogHistory, ...playerScene } = result;
   const privateIds = new Set((scene.annotations ?? []).filter((annotation) => !sceneAnnotationIsPublic(annotation)).map((annotation) => annotation.id));
   const publicAnnotations = (scene.annotations ?? []).filter(sceneAnnotationIsPublic);
   const visibleTokenIds = publicAnnotations.some((annotation) => annotation.affectedTokenIds?.length)
     ? new Set(visibleTokensForUser(store, userId, scene.campaignId, store.state.tokens.filter((token) => token.sceneId === scene.id)).map((token) => token.id))
     : new Set<string>();
   return {
-    ...result,
+    ...playerScene,
     annotations: publicAnnotations.map((annotation) => annotation.affectedTokenIds ? { ...annotation, affectedTokenIds: annotation.affectedTokenIds.filter((id) => visibleTokenIds.has(id)) } : annotation),
     ...(scene.annotationHistory ? { annotationHistory: scene.annotationHistory.filter((entry) => sceneAnnotationIsPublic(entry) && !privateIds.has(entry.annotationId)).map((entry) => entry.affectedTokenIds ? { ...entry, affectedTokenIds: entry.affectedTokenIds.filter((id) => visibleTokenIds.has(id)) } : entry) } : {}),
   };
@@ -24218,7 +24253,7 @@ function projectSceneResponseForUser(store: StateStore, userId: string, payload:
       annotations: annotationRecords(data.annotations),
       ...(data.annotationHistory !== undefined ? { annotationHistory: annotationRecords(data.annotationHistory) } : {}),
     } as unknown as Scene) : undefined;
-    for (const key of ["mapPins", "annotations", "annotationHistory", "sceneEditHistory"] as const) {
+    for (const key of ["mapPins", "annotations", "annotationHistory", "sceneEditHistory", "fogHistory"] as const) {
       if (data[key] === undefined) continue;
       if (projected && key in projected) projectedData[key] = projected[key];
       else delete projectedData[key];

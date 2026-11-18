@@ -29,10 +29,13 @@ export async function prepareUploadedAsset(input: {
   const { store, storage, campaignId, name, mimeType, body } = input;
   if (!body.length) throw new AssetUploadError(400, { error: "empty_upload", message: "Asset upload body is empty" });
   if (body.length > input.maxAssetBytes) throw new AssetUploadError(413, { error: "asset_too_large", message: `Asset exceeds ${input.maxAssetBytes} bytes` });
-  const scan = await scanUploadedAsset(body, mimeType, name, { externalTransport: input.scannerTransport });
-  if (scan.blocked) throw new AssetUploadError(422, { error: "asset_security_blocked", message: "Asset upload failed security scan", scanner: scan.scanner, findings: scan.findings });
   const checksum = checksumForBuffer(body);
   const duplicate = store.state.assets.find((asset) => asset.campaignId === campaignId && asset.checksum === checksum && asset.sizeBytes === body.length && asset.mimeType === mimeType && asset.lifecycle?.status !== "archived" && asset.lifecycle?.status !== "deleted" && asset.security?.status === "clean" && Boolean(asset.storage) && isAssetDeliverable(asset) && asset.image?.width === input.requiredImageDimensions.width && asset.image?.height === input.requiredImageDimensions.height);
+  // Reject uploads that cannot fit before any external scanner sees the bytes.
+  const quotaPrecheck = duplicate ? undefined : assetQuotaExceeded(store, campaignId, body.length);
+  if (quotaPrecheck) throw new AssetUploadError(413, quotaPrecheck);
+  const scan = await scanUploadedAsset(body, mimeType, name, { externalTransport: input.scannerTransport });
+  if (scan.blocked) throw new AssetUploadError(422, { error: "asset_security_blocked", message: "Asset upload failed security scan", scanner: scan.scanner, findings: scan.findings });
   if (duplicate) {
     const original = await storage.read(duplicate);
     if (original?.equals(body)) return { asset: duplicate, deduplicated: true, renditionWarnings: [] };

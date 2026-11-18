@@ -9427,6 +9427,16 @@ describe("api", () => {
         role: "observer",
         source: { type: "scim_group", groupId, mappingId }
       });
+      const scimUserSession = await app.inject({ method: "GET", url: "/api/v1/auth/session", headers: { "x-user-id": userId } });
+      expect(scimUserSession.statusCode).toBe(200);
+      expect(scimUserSession.json().memberships.find((member: { campaignId: string }) => member.campaignId === "camp_demo")).not.toHaveProperty("source");
+      expect(scimUserSession.body).not.toContain(mappingId);
+      const playerMemberList = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/members", headers: { "x-user-id": "usr_demo_player" } });
+      expect(playerMemberList.statusCode).toBe(200);
+      expect(playerMemberList.json().find((member: { userId: string }) => member.userId === userId)).not.toHaveProperty("source");
+      expect(playerMemberList.body).not.toContain(mappingId);
+      const managerMemberList = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/members", headers: adminHeaders });
+      expect(managerMemberList.json().find((member: { userId: string }) => member.userId === userId)).toMatchObject({ source: { type: "scim_group", groupId, mappingId } });
 
       const archive = await app.inject({
         method: "GET",
@@ -11437,6 +11447,31 @@ describe("api", () => {
     }
   });
 
+  it("caps scene walls and lights at the editable scene ceiling", async () => {
+    const store = new MemoryStateStore();
+    const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
+    scene.walls = Array.from({ length: 10_000 }, (_, index) => ({ id: `wall_cap_${index}`, x1: index % 100, y1: 0, x2: index % 100, y2: 10, blocksVision: true, blocksMovement: true, kind: "wall" as const }));
+    scene.lights = Array.from({ length: 5_000 }, (_, index) => ({ id: `light_cap_${index}`, x: 10, y: 10, radius: 20, color: "#facc15", intensity: 0.2, kind: "light" as const, magical: false }));
+    const app = await buildApp({ store });
+    const wall = await app.inject({ method: "POST", url: "/api/v1/scenes/scn_vault_entry/walls", headers: authHeaders, payload: { x1: 10, y1: 10, x2: 200, y2: 10 } });
+    expect(wall.statusCode).toBe(400);
+    expect(wall.json().message).toContain("limited to 10000");
+    const light = await app.inject({ method: "POST", url: "/api/v1/scenes/scn_vault_entry/lights", headers: authHeaders, payload: { x: 100, y: 100 } });
+    expect(light.statusCode).toBe(400);
+    expect(light.json().message).toContain("limited to 5000");
+    expect(scene.walls).toHaveLength(10_000);
+    expect(scene.lights).toHaveLength(5_000);
+    const oversizedScene = await app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/scenes",
+      headers: authHeaders,
+      payload: { name: "Too Many Walls", walls: Array.from({ length: 10_001 }, () => ({})) }
+    });
+    expect(oversizedScene.statusCode).toBe(400);
+    expect(store.state.scenes.some((item) => item.name === "Too Many Walls")).toBe(false);
+    await app.close();
+  });
+
   it("supports polygon reveal and hide brush fog operations", async () => {
     const store = new MemoryStateStore();
     const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
@@ -11497,6 +11532,14 @@ describe("api", () => {
       headers: playerHeaders
     });
     expect(blockedPlayerHistory.statusCode).toBe(403);
+    const playerScene = await app.inject({ method: "GET", url: "/api/v1/scenes/scn_vault_entry", headers: playerHeaders });
+    expect(playerScene.statusCode).toBe(200);
+    expect(playerScene.json()).not.toHaveProperty("fogHistory");
+    const playerSceneList = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/scenes", headers: playerHeaders });
+    expect(playerSceneList.statusCode).toBe(200);
+    expect(playerSceneList.json().some((entry: Record<string, unknown>) => "fogHistory" in entry)).toBe(false);
+    const gmScene = await app.inject({ method: "GET", url: "/api/v1/scenes/scn_vault_entry", headers: authHeaders });
+    expect(gmScene.json().fogHistory.length).toBeGreaterThan(0);
 
     const blockedPlayerUndo = await app.inject({
       method: "POST",
@@ -14454,14 +14497,14 @@ describe("api", () => {
         wallCount: 5,
         lightCount: 3,
         terrainWallCount: 2,
-        maxPolygonVertexCount: 140,
+        maxPolygonVertexCount: 138,
         issueCount: 15
       })
     );
     expect(diagnostics.json().complexity).toEqual(
       expect.objectContaining({
         polygonVertexCount: expect.any(Number),
-        maxPolygonVertexCount: 140,
+        maxPolygonVertexCount: 138,
         sourceCounts: expect.objectContaining({ fog: expect.any(Number), light: expect.any(Number), token: expect.any(Number) })
       })
     );
@@ -14485,7 +14528,7 @@ describe("api", () => {
         expect.objectContaining({ code: "fog_point_out_of_bounds", targetId: "fog_bad_polygon" }),
         expect.objectContaining({ code: "invalid_fog_radius", targetId: "fog_bad_radius_origin" }),
         expect.objectContaining({ code: "fog_origin_out_of_bounds", targetId: "fog_bad_radius_origin" }),
-        expect.objectContaining({ code: "large_vision_polygon", targetType: "scene", targetId: "rendering", maxPolygonVertexCount: 140 }),
+        expect.objectContaining({ code: "large_vision_polygon", targetType: "scene", targetId: "rendering", maxPolygonVertexCount: 138 }),
         expect.objectContaining({ code: "high_vision_vertex_count", targetType: "scene", targetId: "rendering", polygonVertexCount: expect.any(Number) }),
         expect.objectContaining({ code: "zero_length_wall", targetId: "wall_zero_length" }),
         expect.objectContaining({ code: "wall_out_of_bounds", targetId: "wall_outside_bounds" }),
@@ -14715,10 +14758,10 @@ describe("api", () => {
           budget: expect.objectContaining({
             maxPolygonVertexBudget: 96,
             totalPolygonVertexBudget: 512,
-            maxPolygonVertexCount: 141,
-            maxPolygonUsageRatio: 1.469,
-            polygonVertexCount: 1015,
-            totalPolygonUsageRatio: 1.982,
+            maxPolygonVertexCount: 137,
+            maxPolygonUsageRatio: 1.427,
+            polygonVertexCount: 998,
+            totalPolygonUsageRatio: 1.949,
             totalPolygonExceeded: true,
             scenesExceedingMaxPolygonBudget: 1,
             scenesExceedingTotalPolygonBudget: 1
@@ -14864,8 +14907,8 @@ describe("api", () => {
             campaignCount: 1,
             sceneActionRequiredCount: 2,
             issueCount: 20,
-            maxPolygonVertexCount: 141,
-            polygonVertexCount: 1015,
+            maxPolygonVertexCount: 137,
+            polygonVertexCount: 998,
             lightCount: 4,
             terrainWallCount: 2,
             degenerateWallCount: 2,
@@ -14969,7 +15012,7 @@ describe("api", () => {
               actionRequired: true,
               actionReasons: ["rendering_errors", "large_vision_polygon", "high_vision_vertex_count"],
               budget: expect.objectContaining({ maxPolygonVertexBudget: 96, totalPolygonVertexBudget: 512, maxPolygonExceeded: true, totalPolygonExceeded: true }),
-              counts: expect.objectContaining({ issueCount: 19, fogRegionCount: 4, wallCount: 6, lightCount: 4, maxPolygonVertexCount: 141, terrainWallCount: 2, degenerateWallCount: 1 }),
+              counts: expect.objectContaining({ issueCount: 19, fogRegionCount: 4, wallCount: 6, lightCount: 4, maxPolygonVertexCount: 137, terrainWallCount: 2, degenerateWallCount: 1 }),
               topIssues: expect.arrayContaining([
                 expect.objectContaining({ code: "fog_polygon_too_small", targetType: "fog", targetId: "fog_admin_bad_polygon" }),
                 expect.objectContaining({ code: "zero_length_wall", targetType: "wall", targetId: "wall_admin_zero_length" })
@@ -15018,7 +15061,7 @@ describe("api", () => {
               code: "large_vision_polygon",
               severity: "warning",
               message: expect.stringContaining("recommended vertex budget"),
-              details: expect.objectContaining({ maxPolygonVertexCount: 141, maxPolygonVertexBudget: 96 })
+              details: expect.objectContaining({ maxPolygonVertexCount: 137, maxPolygonVertexBudget: 96 })
             })
           })
         ])
@@ -33008,7 +33051,6 @@ registerCommand("/state", (input) => {
             campaignName: "The Ember Vault",
             provider: "codex-ops-test",
             toolName: "roll_dice",
-            input: { formula: "1d20+2", label: "Ops Check" },
             status: "completed"
           }),
           expect.objectContaining({
@@ -33021,6 +33063,15 @@ registerCommand("/state", (input) => {
         ])
       );
       expect(JSON.stringify(operations.json())).not.toContain("OPENAI_API_KEY");
+      // Server admins see operational telemetry, not campaign prompts, replies or tool payloads.
+      for (const thread of operations.json().recentThreads) {
+        for (const field of ["prompt", "assistantMessage", "sources", "citations", "citationWarnings", "contextScopes", "advertisedTools"]) expect(thread).not.toHaveProperty(field);
+      }
+      for (const toolCall of operations.json().recentToolCalls) {
+        expect(toolCall).not.toHaveProperty("input");
+        if (toolCall.output !== undefined) expect(Object.keys(toolCall.output)).toEqual(["error"]);
+      }
+      expect(JSON.stringify(operations.json().recentToolCalls)).not.toContain("Ops Check");
       expect(store.state.auditLogs.map((log) => log.action)).toContain("admin.aiOperations.inspect");
       expect(store.state.auditLogs.at(-1)).toMatchObject({
         action: "admin.aiOperations.inspect",
@@ -36630,6 +36681,42 @@ registerCommand("/state", (input) => {
         scanner: "external-asset-scanner",
         findings: [{ code: "external_scanner_unavailable", severity: "high" }]
       });
+      expect(store.state.assets).toHaveLength(0);
+    } finally {
+      await app.close();
+      await new Promise<void>((resolve, reject) => scanner.close((error) => (error ? reject(error) : resolve())));
+      restoreEnv(previousEnv);
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects over-quota uploads before calling an external asset trust scanner", async () => {
+    const previousEnv = snapshotEnv(["OTTE_ASSET_TRUST_WEBHOOK_URL", "OTTE_ASSET_TRUST_WEBHOOK_TOKEN", "OTTE_ASSET_TRUST_TIMEOUT_MS", "OTTE_ASSET_TRUST_FAIL_CLOSED", "OTTE_ASSET_TRUST_SCANNER_NAME", "OTTE_ASSET_QUOTA_BYTES"]);
+    const directory = mkdtempSync(join(tmpdir(), "otte-asset-trust-quota-"));
+    const store = new MemoryStateStore();
+    let scannerCalls = 0;
+    const scanner = createServer((_request, response) => {
+      scannerCalls += 1;
+      response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ status: "clean", findings: [] }));
+    });
+    await new Promise<void>((resolve) => scanner.listen(0, "127.0.0.1", resolve));
+    const address = scanner.address() as AddressInfo;
+    process.env.OTTE_ASSET_TRUST_WEBHOOK_URL = `http://127.0.0.1:${address.port}/scan`;
+    process.env.OTTE_ASSET_TRUST_TIMEOUT_MS = "1000";
+    process.env.OTTE_ASSET_TRUST_FAIL_CLOSED = "true";
+    process.env.OTTE_ASSET_TRUST_SCANNER_NAME = "external-asset-scanner";
+    process.env.OTTE_ASSET_QUOTA_BYTES = "8";
+    const app = await buildApp({ store, uploadDir: directory, assetScannerTransport: localAssetOutboundTestTransport() });
+    try {
+      const overQuota = await app.inject({
+        method: "POST",
+        url: "/api/v1/campaigns/camp_demo/assets/upload",
+        headers: { ...authHeaders, "content-type": "image/png", "x-asset-name": encodeURIComponent("Too Big.png") },
+        payload: Buffer.from("bytes-over-the-quota")
+      });
+      expect(overQuota.statusCode).toBe(413);
+      expect(overQuota.json()).toMatchObject({ error: "asset_quota_exceeded", quotaBytes: 8 });
+      expect(scannerCalls).toBe(0);
       expect(store.state.assets).toHaveLength(0);
     } finally {
       await app.close();

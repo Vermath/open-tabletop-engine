@@ -168,7 +168,9 @@ export function computeFogRevealPolygon(scene: Pick<Scene, "width" | "height">, 
 
 export function computeVisibilityPolygon(scene: Pick<Scene, "width" | "height" | "walls">, origin: VisionPoint, radius: number): VisionPoint[] {
   if (radius <= 0) return [];
-  const segments = [...sceneBounds(scene.width, scene.height), ...visionBlockingWallSegments(scene.walls)];
+  // Walls wholly outside the radius can never stop a ray, so skip them; this keeps
+  // large maps cheap because each source only pays for walls near it.
+  const segments = [...sceneBounds(scene.width, scene.height), ...visionBlockingWallSegments(scene.walls).filter((segment) => segmentWithinRadius(origin, radius, segment))];
   const angles = candidateAngles(origin, radius, segments);
   const hits = angles.map((angle) => castRay(origin, radius, angle, segments)).sort((a, b) => a.angle - b.angle);
   return compactPolygon(hits.map((hit) => clampPoint(hit.point, scene.width, scene.height)));
@@ -344,6 +346,14 @@ function sceneBounds(width: number, height: number): Segment[] {
     { a: { x: width, y: height }, b: { x: 0, y: height } },
     { a: { x: 0, y: height }, b: { x: 0, y: 0 } }
   ];
+}
+
+function segmentWithinRadius(origin: VisionPoint, radius: number, segment: Segment): boolean {
+  const dx = segment.b.x - segment.a.x;
+  const dy = segment.b.y - segment.a.y;
+  const lengthSquared = dx * dx + dy * dy;
+  const t = lengthSquared === 0 ? 0 : Math.max(0, Math.min(1, ((origin.x - segment.a.x) * dx + (origin.y - segment.a.y) * dy) / lengthSquared));
+  return distance(origin, { x: segment.a.x + dx * t, y: segment.a.y + dy * t }) <= radius + 1;
 }
 
 function visionBlockingWallSegments(walls: Wall[]): Segment[] {

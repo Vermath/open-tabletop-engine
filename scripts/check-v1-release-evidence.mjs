@@ -84,6 +84,7 @@ function checkIdentityProviderSmoke() {
       meaningfulField(field(section.body, "Provider")) &&
       meaningfulField(field(section.body, "Provider sandbox or tenant label")) &&
       meaningfulChoiceField(field(section.body, "Smoke target")) &&
+      !skippedSmokeEvidence(section) &&
       passField(field(section.body, "OIDC discovery/test result")) &&
       passField(field(section.body, "SCIM ServiceProviderConfig result"))
   );
@@ -387,6 +388,14 @@ function passField(value) {
   return !templateChoice(normalized.toLowerCase()) && !normalized.includes("/") && /^pass(?:\b|:|-|$)/i.test(normalized);
 }
 
+function skippedSmokeEvidence(section) {
+  const text = `${section.title}\n${section.body}`;
+  if (/\b(?:was|were|is|are)\s+skipped\b/i.test(text)) return true;
+  if (/\bskip(?:ped|)\b[\s\S]{0,40}\bbecause\b/i.test(text)) return true;
+  if (/\bnot run\b/i.test(text)) return true;
+  return false;
+}
+
 function meaningfulField(value) {
   const normalized = value.trim().toLowerCase();
   return (
@@ -435,22 +444,26 @@ function ownerOverridePlaceholder(markdown) {
 }
 
 function explicitOwnerOverride(markdown) {
-  const evidenceText = stripCodeFences(markdown);
-  const matches = evidenceText.matchAll(/^-\s*Owner-approved (?:substitution|descope|substitute):\s*(.+)$/gim);
-  for (const match of matches) {
-    const value = match[1].trim().toLowerCase();
+  const assistiveOverrides = sectionsFor(markdown, "Assistive Technology Owner-Approved Descope").filter((section) => !placeholder(section.title));
+  for (const section of assistiveOverrides) {
+    const ownerApproval = field(section.body, "Owner-approved descope");
+    const approval = ownerApproval.trim().toLowerCase();
     if (
-      value &&
-      !["none", "n/a", "na", "no", "not approved", "pending", "tbd", "<approval summary>", "<explicit owner approval summary>"].includes(value) &&
-      !placeholder(value) &&
-      !templateChoice(value) &&
-      !value.includes("/") &&
-      !negativeOwnerApproval(value) &&
-      /\bowner\b[\s\S]*\b(?:accepted|approved)\b|\b(?:accepted|approved)\b[\s\S]*\bowner\b/.test(value)
+      approval &&
+      !["none", "n/a", "na", "no", "not approved", "pending", "tbd", "<approval summary>", "<explicit owner approval summary>"].includes(approval) &&
+      !placeholder(approval) &&
+      !templateChoice(approval) &&
+      !approval.includes("/") &&
+      !negativeOwnerApproval(approval) &&
+      /\bowner\b[\s\S]*\b(?:accepted|approved)\b|\b(?:accepted|approved)\b[\s\S]*\bowner\b/.test(approval) &&
+      evidenceCommitMatches(section.body) &&
+      meaningfulField(field(section.body, "Required environments replaced or removed")) &&
+      meaningfulField(field(section.body, "Reason"))
     ) {
       return true;
     }
   }
+
   return false;
 }
 
