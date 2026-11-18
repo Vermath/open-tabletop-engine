@@ -11496,6 +11496,14 @@ describe("api", () => {
       headers: playerHeaders
     });
     expect(blockedPlayerHistory.statusCode).toBe(403);
+    const playerScene = await app.inject({ method: "GET", url: "/api/v1/scenes/scn_vault_entry", headers: playerHeaders });
+    expect(playerScene.statusCode).toBe(200);
+    expect(playerScene.json()).not.toHaveProperty("fogHistory");
+    const playerSceneList = await app.inject({ method: "GET", url: "/api/v1/campaigns/camp_demo/scenes", headers: playerHeaders });
+    expect(playerSceneList.statusCode).toBe(200);
+    expect(playerSceneList.json().some((entry: Record<string, unknown>) => "fogHistory" in entry)).toBe(false);
+    const gmScene = await app.inject({ method: "GET", url: "/api/v1/scenes/scn_vault_entry", headers: authHeaders });
+    expect(gmScene.json().fogHistory.length).toBeGreaterThan(0);
 
     const blockedPlayerUndo = await app.inject({
       method: "POST",

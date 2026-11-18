@@ -22000,6 +22000,10 @@ function filterRealtimeEvent(store: StateStore, event: EngineEvent, userId: stri
     if (readableScene && !canReadSceneRecord(store, userId, readableScene)) return undefined;
     if (!readableScene && !canAccessPreparedScenes(store, userId, event.campaignId)) return undefined;
     if (scene && Array.isArray(scene.annotations)) return redactedRealtimeEvent(event, scenePayloadForUser(store, userId, scene as Scene));
+    if (scene && "fogHistory" in scene && !canCampaign(store, userId, event.campaignId, "token.reveal")) {
+      const { fogHistory: _fogHistory, ...playerScene } = scene;
+      return { ...event, payload: withoutSceneEditHistory(playerScene as Scene) };
+    }
     if (scene && "sceneEditHistory" in scene) return { ...event, payload: withoutSceneEditHistory(scene as Scene) };
     return event;
   }
@@ -24111,13 +24115,15 @@ function sceneAnnotationIsPublic(annotation: Pick<SceneAnnotation, "visibility">
 function scenePayloadForUser(store: StateStore, userId: string, scene: Scene): Scene {
   const result = withoutSceneEditHistory(scene);
   if (canCampaign(store, userId, scene.campaignId, "token.reveal")) return result;
+  // Fog history records hidden and since-removed fog geometry; it is GM data, like GET /fog/history.
+  const { fogHistory: _fogHistory, ...playerScene } = result;
   const privateIds = new Set((scene.annotations ?? []).filter((annotation) => !sceneAnnotationIsPublic(annotation)).map((annotation) => annotation.id));
   const publicAnnotations = (scene.annotations ?? []).filter(sceneAnnotationIsPublic);
   const visibleTokenIds = publicAnnotations.some((annotation) => annotation.affectedTokenIds?.length)
     ? new Set(visibleTokensForUser(store, userId, scene.campaignId, store.state.tokens.filter((token) => token.sceneId === scene.id)).map((token) => token.id))
     : new Set<string>();
   return {
-    ...result,
+    ...playerScene,
     annotations: publicAnnotations.map((annotation) => annotation.affectedTokenIds ? { ...annotation, affectedTokenIds: annotation.affectedTokenIds.filter((id) => visibleTokenIds.has(id)) } : annotation),
     ...(scene.annotationHistory ? { annotationHistory: scene.annotationHistory.filter((entry) => sceneAnnotationIsPublic(entry) && !privateIds.has(entry.annotationId)).map((entry) => entry.affectedTokenIds ? { ...entry, affectedTokenIds: entry.affectedTokenIds.filter((id) => visibleTokenIds.has(id)) } : entry) } : {}),
   };
@@ -24144,7 +24150,7 @@ function projectSceneResponseForUser(store: StateStore, userId: string, payload:
       annotations: annotationRecords(data.annotations),
       ...(data.annotationHistory !== undefined ? { annotationHistory: annotationRecords(data.annotationHistory) } : {}),
     } as unknown as Scene) : undefined;
-    for (const key of ["annotations", "annotationHistory", "sceneEditHistory"] as const) {
+    for (const key of ["annotations", "annotationHistory", "sceneEditHistory", "fogHistory"] as const) {
       if (data[key] === undefined) continue;
       if (projected && key in projected) projectedData[key] = projected[key];
       else delete projectedData[key];
