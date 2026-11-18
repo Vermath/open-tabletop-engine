@@ -1,7 +1,7 @@
 import type { PresentationTarget, PresentationReceipt } from "@open-tabletop/api-contracts";
 import type { RealtimePresentation } from "@open-tabletop/core";
 import { useEffect, useRef, useState } from "react";
-import { apiPost, baseUrl, type Snapshot } from "./api.js";
+import { apiGet, apiPost, baseUrl, type Snapshot } from "./api.js";
 import { MarkdownDocument } from "./markdown-document.js";
 import { errorMessage } from "./sheet-format.js";
 
@@ -15,7 +15,22 @@ export function PresentToPlayers({ campaignId, target, members }: { campaignId: 
   const [selected, setSelected] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
-  const players = members.filter((member) => member.role === "player" && member.active !== false);
+  const [expanded, setExpanded] = useState(false);
+  const [roster, setRoster] = useState<{ campaignId: string; snapshot: Snapshot["members"]; rows: Snapshot["members"] }>();
+  useEffect(() => {
+    if (!expanded) return;
+    const controller = new AbortController();
+    apiGet<Snapshot["members"]>(`/api/v1/campaigns/${encodeURIComponent(campaignId)}/members`, { signal: controller.signal })
+      .then((rows) => {
+        if (!controller.signal.aborted) setRoster({ campaignId, snapshot: members, rows });
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) setStatus(`Could not load recipients. Reopen the list to retry. ${errorMessage(error)}`);
+      });
+    return () => controller.abort();
+  }, [expanded, campaignId, members]);
+  const currentRoster = roster?.campaignId === campaignId && roster.snapshot === members ? roster.rows : undefined;
+  const players = (currentRoster ?? members).filter((member) => member.role === "player" && member.active !== false);
   const recipientUserIds = players.filter((member) => selected.includes(member.user.id)).map((member) => member.user.id);
   async function present() {
     setBusy(true);
@@ -30,10 +45,13 @@ export function PresentToPlayers({ campaignId, target, members }: { campaignId: 
       setBusy(false);
     }
   }
-  return <details className="lore-link-drawer">
+  return <details className="lore-link-drawer" onToggle={(event) => {
+    setExpanded(event.currentTarget.open);
+    if (!event.currentTarget.open) { setRoster(undefined); setStatus(""); }
+  }}>
     <summary>Show to players</summary>
     <p>Show the saved text and uploaded images to connected players for five minutes. The saved audience stays the same.</p>
-    <fieldset className="lore-target-grid" disabled={busy}>
+    <fieldset className="lore-target-grid" disabled={busy || (expanded && !currentRoster)}>
       <legend>Recipients</legend>
       {players.length === 0 && <p>No player seats in this campaign.</p>}
       {players.map(({ user }) => <label key={user.id}><input type="checkbox" checked={selected.includes(user.id)} onChange={(event) => {
@@ -41,7 +59,7 @@ export function PresentToPlayers({ campaignId, target, members }: { campaignId: 
         setStatus("");
       }} />{user.displayName}</label>)}
     </fieldset>
-    <button type="button" className="primary-button" disabled={busy || !recipientUserIds.length} onClick={() => void present()}>Show selected players</button>
+    <button type="button" className="primary-button" disabled={busy || !currentRoster || !recipientUserIds.length} onClick={() => void present()}>Show selected players</button>
     {status && <p role="status">{status}</p>}
   </details>;
 }

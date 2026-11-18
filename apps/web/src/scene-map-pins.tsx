@@ -12,7 +12,8 @@ import "./scene-map-pins.css";
 export interface ScenePinProps {
   pinJournals?: JournalEntry[];
   presentationMembers?: Snapshot["members"];
-  canPresentPin?(targetType: PinTarget["targetType"]): boolean;
+  canPresentJournalPin?: boolean;
+  canPresentHandoutPin?: boolean;
   pinHandouts?: HandoutLibraryItem[];
   onSavePin?(scene: Scene, command: SceneMapPin | { remove: string }): Promise<void>;
 }
@@ -55,7 +56,7 @@ export function ScenePinDialog(props: ScenePinProps & { scene: Scene; assets: Ma
     {editing && props.onSavePin ? <PinForm scene={props.scene} entries={entries} pin={pin} target={entry} point={selection.kind === "add" ? selection.point : undefined} onSave={props.onSavePin} onClose={props.onClose} />
       : entry && <><h3>{entry.title}</h3><MarkdownDocument source={entry.body} label={entry.title} />
         {entry.assetIds && <HandoutAssetGallery assets={props.assets.filter((asset) => entry.assetIds!.includes(asset.id))} />}
-        {pin && props.presentationMembers && props.canPresentPin?.(entry.targetType) && <PresentToPlayers key={pin.id} campaignId={props.scene.campaignId} members={props.presentationMembers}
+        {pin && props.presentationMembers && (entry.targetType === "journal" ? props.canPresentJournalPin : props.canPresentHandoutPin) && <PresentToPlayers key={pin.id} campaignId={props.scene.campaignId} members={props.presentationMembers}
           target={{ targetType: entry.targetType, targetId: entry.targetId, expectedUpdatedAt: entry.updatedAt, pinId: pin.id, sceneId: props.scene.id }} />}
         {props.onSavePin && <button type="button" className="ghost-button" onClick={() => setEditing(true)}>Edit map pin</button>}</>}
   </dialog>;

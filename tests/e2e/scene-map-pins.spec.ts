@@ -177,6 +177,17 @@ test("presents a private illustrated handout and journal pin while the player st
       await expect(player.getByText(handout.body, { exact: true })).toHaveCount(0);
       await expect(player.getByRole("img", { name: asset.name })).toHaveCount(0);
       await expect(playerBoard).toBeVisible();
+      await expect(page.getByRole("checkbox", { name: "Demo Player" })).toHaveCount(0);
+      // A pin can open while the GM's full campaign refresh is still in flight.
+      await page.evaluate(() => {
+        const held = new Promise<void>((resolve) => window.addEventListener("release-gm-snapshot", () => resolve(), { once: true }));
+        const fetch = window.fetch.bind(window);
+        window.fetch = async (...args) => {
+          const response = await fetch(...args);
+          if (new URL(response.url).pathname === "/api/v1/campaigns/camp_demo/snapshot") await held;
+          return response;
+        };
+      });
     } finally {
       await seatRole("player");
     }
@@ -192,7 +203,11 @@ test("presents a private illustrated handout and journal pin while the player st
     await page.getByRole("button", { name: "Open map pin GM key" }).click();
     const pinDialog = page.getByRole("dialog", { name: "Linked entry" });
     await pinDialog.getByText("Show to players", { exact: true }).click();
-    await pinDialog.getByRole("checkbox", { name: "Demo Player" }).check();
+    try {
+      await pinDialog.getByRole("checkbox", { name: "Demo Player" }).check({ timeout: 5000 });
+    } finally {
+      await page.evaluate(() => window.dispatchEvent(new Event("release-gm-snapshot")));
+    }
     await pinDialog.getByRole("button", { name: "Show selected players" }).click();
     await expect(modal).toContainText("both braziers");
     await expect(player.getByRole("button", { name: "Open map pin GM key" })).toHaveCount(0);
