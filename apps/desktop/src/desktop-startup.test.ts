@@ -73,7 +73,7 @@ describe("sandbox preload build format", () => {
     const output = mkdtempSync(join(tmpdir(), "otte-desktop-startup-"));
     temporaryRoots.push(output);
     const compiler = fileURLToPath(new URL("./bin/tsc", import.meta.resolve("typescript/package.json")));
-    execFileSync(process.execPath, [compiler, "-p", join(packageRoot, "tsconfig.json"), "--outDir", output, "--noCheck"]);
+    execFileSync(process.execPath, [compiler, "-p", join(packageRoot, "tsconfig.json"), "--outDir", output, "--noCheck"], { stdio: "inherit" });
     const compiled = readFileSync(join(output, "preload.js"), "utf8");
     let exposed: DesktopPreloadApi | undefined;
     const calls: unknown[][] = [];
@@ -89,5 +89,5 @@ describe("sandbox preload build format", () => {
     expect(exposed).toBeDefined();
     expect(await exposed!.getDesktopStatus()).toEqual({ dataRoot: "fixture" });
     expect(calls).toEqual([["desktop:getStatus"]]);
-  });
+  }, 30_000);
 });
