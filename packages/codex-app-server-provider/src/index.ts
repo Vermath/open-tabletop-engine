@@ -74,6 +74,8 @@ export interface CodexAppServerImageGenerationInput {
   baseInstructions?: string;
   developerInstructions?: string;
   signal?: AbortSignal;
+  /** Start Codex's managed sign-in when unauthenticated; otherwise only report that sign-in is required. */
+  providerLoginAllowed?: boolean;
 }
 
 export interface CodexAppServerGeneratedImage {
@@ -132,6 +134,7 @@ interface CodexProviderTurnStartParams {
   surface?: string;
   signal?: AbortSignal;
   executeTool?: (toolName: string, input: unknown) => Promise<unknown>;
+  providerLoginAllowed?: boolean;
 }
 
 interface CodexStreamingTurnTransport extends JsonRpcTransport {
@@ -218,7 +221,8 @@ export class CodexAppServerProvider implements AiProvider {
       reasoningEffort: input.reasoningEffort ?? this.options.reasoningEffort,
       surface: input.surface,
       signal: input.signal,
-      executeTool: input.executeTool
+      executeTool: input.executeTool,
+      providerLoginAllowed: input.providerLoginAllowed
     };
     if (isCodexStreamingTurnTransport(this.options.transport)) {
       for await (const event of this.options.transport.streamTurn(turnInput)) yield event;
@@ -298,7 +302,7 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
       });
       rpc.notify("initialized");
       if (input.signal?.aborted) throw codexTurnAbortError();
-      await ensureCodexAppServerAuthenticated(rpc, this.options.loginType);
+      await ensureCodexAppServerAuthenticated(rpc, this.options.loginType, input.providerLoginAllowed === true);
       if (input.signal?.aborted) throw codexTurnAbortError();
       const capabilities = await rpc.request<{ imageGeneration?: boolean }>("modelProvider/capabilities/read", {});
       if (capabilities.imageGeneration !== true) {
@@ -388,7 +392,7 @@ export class CodexAppServerWebSocketTransport implements JsonRpcTransport {
       });
       rpc.notify("initialized");
       if (input.signal?.aborted) throw codexTurnAbortError();
-      await ensureCodexAppServerAuthenticated(rpc, this.options.loginType);
+      await ensureCodexAppServerAuthenticated(rpc, this.options.loginType, input.providerLoginAllowed === true);
       if (input.signal?.aborted) throw codexTurnAbortError();
       const thread = await rpc.request<{ thread: { id: string } }>("thread/start", {
         cwd: this.options.cwd ?? null,
@@ -1394,17 +1398,18 @@ function optionalTimeout(timeoutMs: number, callback: () => void): TimeoutHandle
   return timeoutMs === 0 ? undefined : setTimeout(callback, timeoutMs);
 }
 
-async function ensureCodexAppServerAuthenticated(rpc: CodexAccountRpc, loginType: CodexAppServerLoginType = "chatgpt"): Promise<void> {
+async function ensureCodexAppServerAuthenticated(rpc: CodexAccountRpc, loginType: CodexAppServerLoginType = "chatgpt", loginAllowed = false): Promise<void> {
   let account: unknown;
   try {
     account = await rpc.request("account/read", {});
   } catch (error) {
     if (isCodexMethodNotFoundError(error)) return;
     if (!isCodexAuthError(error)) throw error;
-    throw new CodexAppServerAuthRequiredError(await requestCodexManagedLogin(rpc, loginType));
+    throw new CodexAppServerAuthRequiredError(loginAllowed ? await requestCodexManagedLogin(rpc, loginType) : { type: loginType });
   }
   if (!codexAccountNeedsLogin(account)) return;
-  throw new CodexAppServerAuthRequiredError(await requestCodexManagedLogin(rpc, loginType));
+  // Only callers allowed to bind the server's Codex account get a login link or device code.
+  throw new CodexAppServerAuthRequiredError(loginAllowed ? await requestCodexManagedLogin(rpc, loginType) : { type: loginType });
 }
 
 async function requestCodexManagedLogin(rpc: CodexAccountRpc, loginType: CodexAppServerLoginType): Promise<CodexAppServerLoginStart> {

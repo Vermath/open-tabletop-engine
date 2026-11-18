@@ -1,4 +1,4 @@
-import type { CalculationOverride, WorldRecord, WorldRelation } from "@open-tabletop/core";
+import type { CalculationOverride, WorldRecord, WorldRelation } from "@open-tabletop/api-contracts";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { OpenTabletopClient, type CampaignSnapshot } from "./index.js";
 

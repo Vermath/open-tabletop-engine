@@ -433,6 +433,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
     return method === "GET" ? { tools: ["read_campaign"] } : { excluded: "campaign_lifecycle" };
   }
   if (path === "/api/v1/campaigns/{campaignId}/presence") return { tools: ["read_campaign"] };
+  if (path === "/api/v1/campaigns/{campaignId}/call") return { excluded: "human_voice_video_handoff" };
   if (path === "/api/v1/campaigns/{campaignId}/duplicate") return { excluded: "campaign_lifecycle" };
   if (path.endsWith("/scene-duplications")) return { excluded: "human_confirmed_scene_duplication" };
   if (path.includes("/archive-import-operations")) return { excluded: "human_confirmed_archive_recovery" };
@@ -440,6 +441,7 @@ function classifyMcpRouteSurface(method: string, path: string): { tools?: string
   if (path.endsWith("/ownership-transfer")) return { excluded: "campaign_member_admin" };
   if (path.includes("/webhooks")) return { excluded: "human_campaign_integration_admin" };
   if (path === "/api/v1/campaigns/{campaignId}/snapshot") return { excluded: "client_state_aggregation" };
+  if (method === "GET" && path === "/api/v1/scenes/{sceneId}/player-preview") return { excluded: "gm_player_view_client_aggregation" };
   if (path.includes("/members")) return method === "GET" && path.endsWith("/members") ? { tools: ["read_campaign"] } : { excluded: "campaign_member_admin" };
   if (path.includes("/campaign-sessions/") || path.endsWith("/sessions")) return method === "GET" ? { tools: ["read_campaign_session"] } : { excluded: "campaign_session_preparation" };
   if (path.endsWith("/search")) return { tools: ["search_campaign"] };
@@ -2034,8 +2036,8 @@ describe("api", () => {
       expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}"]?.put)).toMatchObject({ $ref: "#/components/schemas/PluginStorageSetRequest" });
       expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/plugins/{pluginId}/storage/{key}"]?.put)).toMatchObject({ $ref: "#/components/schemas/PluginStorageEntry" });
       expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/install"]?.post)).toMatchObject({ $ref: "#/components/schemas/SystemInstallResponse" });
-      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll"]?.post)).toMatchObject({ $ref: "#/components/schemas/SystemActorActionRequest" });
-      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll"]?.post)).toMatchObject({ $ref: "#/components/schemas/SystemRollResponse" });
+      expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll"]?.post)).toMatchObject({ $ref: "#/components/schemas/SystemActorRollRequest" });
+      expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/systems/{systemId}/actors/{actorId}/roll"]?.post)).toMatchObject({ $ref: "#/components/schemas/SystemActorRollResponse" });
       expect(jsonRequestSchema(spec.paths["/api/v1/campaigns/{campaignId}/content-imports/preview"]?.post)).toMatchObject({ $ref: "#/components/schemas/ContentImportPreviewRequest" });
       expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/content-imports/preview"]?.post)).toMatchObject({ $ref: "#/components/schemas/ContentImportBatch" });
       expect(jsonResponseSchema(spec.paths["/api/v1/campaigns/{campaignId}/export"]?.get)).toMatchObject({ $ref: "#/components/schemas/CampaignArchive" });
@@ -6437,7 +6439,8 @@ describe("api", () => {
         }
       });
       expect(patched.statusCode).toBe(200);
-      expect(patched.json()).toEqual(expect.objectContaining({ manualTurnOrder: false, turnIndex: 0 }));
+      expect(patched.json()).toEqual(expect.objectContaining({ manualTurnOrder: false, turnIndex: 1 }));
+      expect(patched.json().combatants[patched.json().turnIndex].id).toBe("cmbt_manual_low");
       expect(patched.json().combatants.map((combatant: { id: string }) => combatant.id)).toEqual(["cmbt_manual_high", "cmbt_manual_low"]);
     } finally {
       await app.close();
@@ -11309,6 +11312,8 @@ describe("api", () => {
     valen.visionRadius = 240;
     valen.brightVisionRadius = 80;
     valen.dimVisionRadius = 240;
+    store.save();
+    store.flush();
     const app = await buildApp({ store });
     try {
       const adminLogin = await app.inject({
@@ -11369,7 +11374,7 @@ describe("api", () => {
       expect(invalidVisionToggle.statusCode).toBe(400);
       expect(valen.visionEnabled).toBe(true);
 
-      scene.fog = [{ id: "fog_center", x: 500, y: 380, radius: 320, hidden: false }];
+      store.state.scenes.find((item) => item.id === scene.id)!.fog = [{ id: "fog_center", x: 500, y: 380, radius: 320, hidden: false }];
       const vision = await app.inject({
         method: "GET",
         url: "/api/v1/scenes/scn_vault_entry/vision",
@@ -12312,6 +12317,7 @@ describe("api", () => {
       headers?: Record<string, string>;
       payload?: string | Buffer | object;
     }> = [
+      { method: "POST", url: "/api/v1/campaigns/camp_demo/systems/dnd-5e-srd/binding", headers: { "idempotency-key": "auth-matrix-binding" }, payload: { expectedUpdatedAt: "2026-05-01T00:00:00.000Z", system: { systemId: "dnd-5e-srd", version: "1.0.0", checksum: "a".repeat(64) }, expectedBinding: null } },
       { method: "GET", url: "/api/v1/auth/session" },
       { method: "POST", url: "/api/v1/auth/session/upgrade-cookie", payload: { expectedUserId: "usr_observer" } },
       { method: "POST", url: "/api/v1/auth/session/upgrade-cookie/confirm", payload: { expectedUserId: "usr_observer" } },
@@ -12342,6 +12348,7 @@ describe("api", () => {
       { method: "GET", url: "/api/v1/campaigns/camp_demo/snapshot" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/members" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/presence" },
+      { method: "GET", url: "/api/v1/campaigns/camp_demo/call" },
       { method: "GET", url: "/api/v1/campaigns/camp_demo/world-records" },
       { method: "POST", url: "/api/v1/campaigns/camp_demo/world-records", headers: { "idempotency-key": "auth-matrix-world-record-create" }, payload: { kind: "npc", name: "Blocked record", expectedCampaignUpdatedAt: store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt } },
       { method: "PATCH", url: "/api/v1/world-records/wrec_auth_matrix_one", headers: { "idempotency-key": "auth-matrix-world-record-update" }, payload: { summary: "Blocked", expectedUpdatedAt: authMatrixWorldRecordOne.updatedAt } },
@@ -12411,6 +12418,7 @@ describe("api", () => {
       { method: "GET", url: "/api/v1/scenes/scn_vault_entry/delegations" },
       { method: "PATCH", url: "/api/v1/scenes/scn_vault_entry/delegations/usr_demo_player", headers: { "idempotency-key": "auth-matrix-scene-delegation" }, payload: { permissions: ["scene.read"] } },
       { method: "GET", url: "/api/v1/scenes/scn_vault_entry/vision" },
+      { method: "GET", url: "/api/v1/scenes/scn_vault_entry/player-preview?userId=usr_demo_player" },
       { method: "GET", url: "/api/v1/scenes/scn_vault_entry/vision/sample?x=100&y=100" },
       { method: "POST", url: "/api/v1/scenes/scn_vault_entry/path-measurement", payload: { points: [{ x: 0, y: 0 }, { x: 100, y: 100 }] } },
       { method: "POST", url: "/api/v1/scenes/scn_vault_entry/difficult-terrain", payload: { label: "No Auth Terrain", points: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }] } },
@@ -12867,6 +12875,7 @@ describe("api", () => {
       ["GET /api/v1/campaign-sessions/{sessionId}", "campaign session preparation requires campaign update"],
       ["GET /api/v1/campaigns/{campaignId}/fog-presets", "fog presets require token reveal"],
       ["GET /api/v1/campaigns/{campaignId}/actors/{actorId}/calculation-overrides", "calculation overrides require private actor access"],
+      ["GET /api/v1/scenes/{sceneId}/player-preview", "player preview requires game master access"],
       ["GET /api/v1/scenes/{sceneId}/rendering/diagnostics", "rendering diagnostics require scene update"],
       ["GET /api/v1/scenes/{sceneId}/delegations", "scene delegation roster requires scene update"],
       ["GET /api/v1/scenes/{sceneId}/edits", "scene edit history requires scene update"],
@@ -13266,6 +13275,7 @@ describe("api", () => {
       return priority(left) - priority(right);
     });
     const privilegedCampaignMutationExpectedStatuses = new Map<string, number>([
+      ["POST /api/v1/campaigns/{campaignId}/systems/{systemId}/binding", 404], // The D&D fixture is not a declarative installation.
       ["DELETE /api/v1/auth/sessions/{sessionId}", 404],
       ["POST /api/v1/organization/invites", 201],
       ["POST /api/v1/campaigns/{campaignId}/world-records", 201],
@@ -13535,6 +13545,7 @@ describe("api", () => {
               }
             : route;
         const currentRevisionRoute = withCurrentMutationRevision(requestRoute);
+        if (key === "POST /api/v1/campaigns/{campaignId}/systems/{systemId}/binding") currentRevisionRoute.payload = { ...(currentRevisionRoute.payload as object), expectedUpdatedAt: store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt };
         const response = await app.inject({
           ...currentRevisionRoute,
           headers: { ...currentRevisionRoute.headers, "x-user-id": "usr_demo_gm" }
@@ -13609,6 +13620,8 @@ describe("api", () => {
       logs: []
     }) satisfies WorkerJobRecord;
     store.state.jobs.push(queuedJob, runningJob);
+    store.save();
+    store.flush();
     const app = await buildApp({ store });
     const scene = store.state.scenes.find((item) => item.id === "scn_vault_entry")!;
     const targetToken = store.state.tokens.find((item) => item.id === "tok_valen")!;
@@ -29479,6 +29492,39 @@ registerCommand("/state", (input) => {
     await app.close();
   });
 
+  it("only lets server admins start the AI provider's own sign-in", async () => {
+    const seen: Array<boolean | undefined> = [];
+    class RecordingProvider implements AiProvider {
+      id = "codex-app-server";
+      label = "Codex App Server";
+
+      async *stream(input: AiProviderRequest): AsyncIterable<AiProviderEvent> {
+        seen.push(input.providerLoginAllowed);
+        yield { type: "message.completed", content: "ok" };
+      }
+    }
+
+    const previousEnv = snapshotEnv(["OTTE_ADMIN_USER_IDS"]);
+    const store = new MemoryStateStore();
+    const app = await buildApp({ store, aiProvider: new RecordingProvider() });
+    const ask = (key: string) => app.inject({
+      method: "POST",
+      url: "/api/v1/campaigns/camp_demo/ai/threads",
+      headers: { ...authHeaders, "idempotency-key": key },
+      payload: { prompt: "Summarize the scene.", surface: "agent_panel", expectedUpdatedAt: store.state.campaigns.find((campaign) => campaign.id === "camp_demo")!.updatedAt }
+    });
+    try {
+      process.env.OTTE_ADMIN_USER_IDS = "";
+      expect((await ask("provider-login-gm")).statusCode).toBe(200);
+      process.env.OTTE_ADMIN_USER_IDS = "usr_demo_gm";
+      expect((await ask("provider-login-admin")).statusCode).toBe(200);
+      expect(seen).toEqual([false, true]);
+    } finally {
+      await app.close();
+      restoreEnv(previousEnv);
+    }
+  });
+
   it("returns Codex app-server OAuth login details when the agent needs ChatGPT auth", async () => {
     class AuthRequiredProvider implements AiProvider {
       id = "codex-app-server";
@@ -30712,6 +30758,41 @@ registerCommand("/state", (input) => {
       expect(store.state.combats.find((entry) => entry.id === combat.id)?.round).toBe(2);
       expect(store.state.assets.find((entry) => entry.id === asset.id)?.name).toBe("MCP Coverage Asset");
       expect(store.state.fogPresets.some((entry) => entry.name === "MCP Proposal Fog")).toBe(true);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("prevents revising another user's proposal without ai.applyChanges", async () => {
+    const store = new MemoryStateStore();
+    store.state.permissionGrants.push(
+      createTimestamped("grant", {
+        subjectType: "user" as const,
+        subjectId: "usr_demo_player",
+        campaignId: "camp_demo",
+        permissions: ["ai.proposeChanges"]
+      })
+    );
+    const pendingProposal = (id: string, createdByUserId: string, title: string) =>
+      createTimestamped("prop", { id, campaignId: "camp_demo", createdByUserId, createdByType: "user" as const, title, summary: "Original summary", status: "pending" as const, changesJson: [], diffJson: {}, approvalRequired: true });
+    store.state.proposals.push(pendingProposal("prop_gm_owned", "usr_demo_gm", "GM proposal"), pendingProposal("prop_player_owned", "usr_demo_player", "Player proposal"));
+    const app = await buildApp({ store });
+    const revise = (proposalId: string, id: number) => app.inject({
+      method: "POST",
+      url: "/api/v1/mcp",
+      headers: { "x-user-id": "usr_demo_player" },
+      payload: { jsonrpc: "2.0", id, method: "tools/call", params: { campaignId: "camp_demo", name: "revise_proposal", arguments: { proposalId, title: "Revised title", summary: "Revised summary", changes: [] } } }
+    });
+    try {
+      const othersProposal = await revise("prop_gm_owned", 5);
+      expect(othersProposal.statusCode).toBe(200);
+      expect(othersProposal.json().result.isError).toBe(true);
+      expect(JSON.parse(othersProposal.json().result.content[0].text)).toMatchObject({ error: "missing_permission", permission: "ai.applyChanges" });
+      expect(store.state.proposals.find((proposal) => proposal.id === "prop_gm_owned")).toMatchObject({ title: "GM proposal", summary: "Original summary", createdByUserId: "usr_demo_gm" });
+
+      const ownProposal = await revise("prop_player_owned", 6);
+      expect(ownProposal.json().result.isError).not.toBe(true);
+      expect(store.state.proposals.find((proposal) => proposal.id === "prop_player_owned")).toMatchObject({ title: "Revised title", summary: "Revised summary" });
     } finally {
       await app.close();
     }
@@ -36729,7 +36810,7 @@ registerCommand("/state", (input) => {
       });
       expect(afterDelete.statusCode).toBe(410);
 
-      storedAsset.lifecycle = { status: "active", updatedAt: "2026-05-06T00:00:00.000Z" };
+      store.state.assets.find((item) => item.id === storedAsset.id)!.lifecycle = { status: "active", updatedAt: "2026-05-06T00:00:00.000Z" };
       const productionLogin = await app.inject({
         method: "POST",
         url: "/api/v1/auth/login",
@@ -36765,7 +36846,7 @@ registerCommand("/state", (input) => {
           lifecycleStatus: "active"
         }
       });
-      storedAsset.lifecycle = { status: "deleted", updatedAt: "2026-05-06T00:00:00.000Z", updatedByUserId: "usr_demo_gm", reason: "manual cleanup" };
+      store.state.assets.find((item) => item.id === storedAsset.id)!.lifecycle = { status: "deleted", updatedAt: "2026-05-06T00:00:00.000Z", updatedByUserId: "usr_demo_gm", reason: "manual cleanup" };
 
       const postDeleteStorage = await app.inject({
         method: "GET",
@@ -36987,8 +37068,8 @@ registerCommand("/state", (input) => {
           }
         }
       });
-      storedAsset.storage = { provider: "s3", bucket: "legacy-assets", key: assetStorageKey(storedAsset) };
-      storedAsset.lifecycle = { status: "active", updatedAt: "2026-05-06T00:00:00.000Z" };
+      store.state.assets.find((item) => item.id === storedAsset.id)!.storage = { provider: "s3", bucket: "legacy-assets", key: assetStorageKey(storedAsset) };
+      store.state.assets.find((item) => item.id === storedAsset.id)!.lifecycle = { status: "active", updatedAt: "2026-05-06T00:00:00.000Z" };
       const driftStorage = await app.inject({
         method: "GET",
         url: "/api/v1/admin/assets/storage",
@@ -37055,8 +37136,8 @@ registerCommand("/state", (input) => {
           })
         }
       });
-      storedAsset.storage = undefined;
-      storedAsset.security = undefined;
+      store.state.assets.find((item) => item.id === storedAsset.id)!.storage = undefined;
+      store.state.assets.find((item) => item.id === storedAsset.id)!.security = undefined;
       const brokenDeliveryStorage = await app.inject({
         method: "GET",
         url: "/api/v1/admin/assets/storage",
@@ -37129,8 +37210,8 @@ registerCommand("/state", (input) => {
           })
         }
       });
-      storedAsset.storage = { provider: "local", key: assetStorageKey(storedAsset) };
-      storedAsset.security = {
+      store.state.assets.find((item) => item.id === storedAsset.id)!.storage = { provider: "local", key: assetStorageKey(storedAsset) };
+      store.state.assets.find((item) => item.id === storedAsset.id)!.security = {
         status: "clean",
         scanner: "external-asset-scanner",
         scannedAt: "2026-05-06T00:00:00.000Z",

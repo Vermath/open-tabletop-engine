@@ -6,6 +6,7 @@ import { formatTokenSenses, parseTokenSenses, tokenBrightVisionPatch, tokenDimVi
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8").replace(/\r\n/g, "\n");
 const actorPanelSource = readFileSync(resolve(__dirname, "actor-panel.tsx"), "utf8").replace(/\r\n/g, "\n");
 const sceneCanvasSource = readFileSync(resolve(__dirname, "scene-canvas.tsx"), "utf8").replace(/\r\n/g, "\n");
+const boardLayersSource = readFileSync(resolve(__dirname, "board-layers.tsx"), "utf8").replace(/\r\n/g, "\n");
 
 describe("token vision editing", () => {
   it("parses valid dim radii without sending invalid or half-entered values", () => {
@@ -50,12 +51,15 @@ describe("token vision editing", () => {
   });
 
   it("wires portal controls, typed darkness masks, and player-vision preview affordances", () => {
-    expect(appSource).toContain("onCyclePlayerVisionPreview={cyclePlayerVisionPreview}");
+    expect(appSource).toContain("onCyclePlayerVisionPreview={playerPreview.show}");
     expect(appSource).toContain("onTogglePortal={toggleScenePortal}");
     expect(appSource).toContain('kind: "darkness"');
-    expect(sceneCanvasSource).toContain('onDoubleClick={(event) => {');
-    expect(sceneCanvasSource).toContain('className="darkness-layer"');
+    expect(boardLayersSource).toContain('onDoubleClick={(event) => {');
+    expect(boardLayersSource).toContain('if ((wall.kind === "door" && !wall.locked) || wall.kind === "window") props.handlers.togglePortal(wall.id);');
+    expect(sceneCanvasSource).toContain("if (wall) void props.onTogglePortal(wall, toggleLock);");
+    expect(boardLayersSource).toContain('className="darkness-layer"');
+    expect(sceneCanvasSource).toContain("<BoardDarknessLayer");
     expect(sceneCanvasSource).toContain("Player vision: {props.visionPreviewLabel}");
-    expect(sceneCanvasSource).toContain("Preview player vision");
+    expect(appSource).toContain("playerPreview.open && <PlayerPreviewPanel preview={playerPreview}");
   });
 });

@@ -6,6 +6,7 @@ import { buildApp, type BuildAppOptions } from "./app.js";
 import { SqliteStateStore } from "./sqlite-store.js";
 
 export interface ApiRuntimeOptions {
+  seedDemoPresentation?: boolean;
   host?: string;
   port?: number;
   sqlitePath?: string;
@@ -124,6 +125,7 @@ export async function startApiRuntime(options: ApiRuntimeOptions = {}): Promise<
   const port = options.port ?? Number(process.env.PORT ?? 4000);
   const appOptions: BuildAppOptions = {
     store: new SqliteStateStore(options.sqlitePath ?? process.env.OTTE_SQLITE_PATH),
+    seedDemoPresentation: options.seedDemoPresentation ?? (process.env.NODE_ENV !== "test"),
     uploadDir: options.uploadDir,
     pluginRoot,
     ...(options.aiProvider ? { aiProvider: options.aiProvider } : {})

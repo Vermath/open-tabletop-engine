@@ -18,6 +18,8 @@ describe("campaign session route module", () => {
       activationHistory: [],
     };
     store.state.scenes.push(nextScene);
+    store.save();
+    store.flush();
     const app = await buildApp({ store });
 
     try {
@@ -67,6 +69,8 @@ describe("campaign session route module", () => {
       createdAt: "2026-08-01T00:00:00.000Z",
       updatedAt: "2026-08-01T00:00:00.000Z",
     });
+    store.save();
+    store.flush();
     const app = await buildApp({ store });
     const collectionUrl = `/api/v1/campaigns/${campaignId}/sessions`;
     const scheduledFor = "2026-08-04T00:30:00.000Z";

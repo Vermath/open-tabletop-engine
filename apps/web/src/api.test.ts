@@ -101,6 +101,31 @@ describe("logoutSession", () => {
   });
 });
 
+describe("signed-out API boundary", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("rejects background requests after logout without silently signing in again", async () => {
+    vi.resetModules();
+    const values = new Map([["otte:userId", "usr_demo_gm"], ["otte:sessionTransport", "cookie"]]);
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => { values.set(key, value); },
+      removeItem: (key: string) => { values.delete(key); },
+    });
+    const fetchMock = vi.fn(async () => jsonResponse({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+    const client = await import("./api.js");
+
+    await client.logoutSession();
+    await expect(client.apiGet("/api/v1/campaigns")).rejects.toMatchObject({ status: 401, message: "Sign in required" });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(values.has("otte:sessionTransport")).toBe(false);
+  });
+});
+
 describe("loginSession", () => {
   beforeEach(() => {
     stubSessionStorage();

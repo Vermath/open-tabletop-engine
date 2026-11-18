@@ -1,5 +1,5 @@
 import type { AiProviderRequest } from "@open-tabletop/ai-core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   CodexAppServerAuthRequiredError,
   CodexAppServerProvider,
@@ -452,14 +452,21 @@ describe("CodexAppServerWebSocketTransport", () => {
       })
     });
 
-    const events = [];
-    for await (const event of provider.stream({
-      ...baseRequest,
-      executeTool: async () => {
-        await new Promise((resolve) => setTimeout(resolve, 60));
-        return { proposalId: "prop_map", implemented: true };
-      }
-    })) events.push(event);
+    const collectEvents = async () => {
+      const events = [];
+      for await (const event of provider.stream({
+        ...baseRequest,
+        executeTool: async () => {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          return { proposalId: "prop_map", implemented: true };
+        }
+      })) events.push(event);
+      return events;
+    };
+
+    vi.useFakeTimers();
+    const [events] = await Promise.all([collectEvents(), vi.runAllTimersAsync()])
+      .finally(() => vi.useRealTimers());
 
     expect(events).toEqual([
       {
@@ -543,7 +550,7 @@ describe("CodexAppServerWebSocketTransport", () => {
     });
 
     await expect(async () => {
-      for await (const _event of provider.stream(baseRequest)) {
+      for await (const _event of provider.stream({ ...baseRequest, providerLoginAllowed: true })) {
         // The unauthenticated account should fail before any model events stream.
       }
     }).rejects.toMatchObject({
@@ -575,7 +582,7 @@ describe("CodexAppServerWebSocketTransport", () => {
     });
 
     await expect(async () => {
-      for await (const _event of provider.stream(baseRequest)) {
+      for await (const _event of provider.stream({ ...baseRequest, providerLoginAllowed: true })) {
         // The hosted app-server should fail with a frontend-owned device-code login.
       }
     }).rejects.toMatchObject({
@@ -588,6 +595,35 @@ describe("CodexAppServerWebSocketTransport", () => {
       }
     } satisfies Partial<CodexAppServerAuthRequiredError>);
     expect(socket?.sent.find((message) => message.method === "account/login/start")?.params).toEqual({ type: "chatgptDeviceCode" });
+    expect(socket?.sent.some((message) => message.method === "thread/start")).toBe(false);
+  });
+
+  it.each(["chatgpt", "chatgptDeviceCode"] as const)("only reports %s sign-in, without starting it, when the caller may not sign the server in", async (loginType) => {
+    let socket: FakeCodexSocket | undefined;
+    const provider = new CodexAppServerProvider({
+      transport: new CodexAppServerWebSocketTransport({
+        url: "ws://codex.test",
+        requestTimeoutMs: 1000,
+        turnTimeoutMs: 1000,
+        loginType,
+        webSocketFactory: () => {
+          socket = new FakeCodexSocket({ account: { authMode: null } });
+          return socket;
+        }
+      })
+    });
+
+    let failure: unknown;
+    try {
+      for await (const _event of provider.stream(baseRequest)) {
+        // No events should stream before the auth failure.
+      }
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({ code: "codex_auth_required", login: { type: loginType } });
+    expect((failure as CodexAppServerAuthRequiredError).login).toEqual({ type: loginType });
+    expect(socket?.sent.some((message) => message.method === "account/login/start")).toBe(false);
     expect(socket?.sent.some((message) => message.method === "thread/start")).toBe(false);
   });
 

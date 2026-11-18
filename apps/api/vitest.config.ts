@@ -15,9 +15,7 @@ export const apiFunctionalTestProject = defineProject({
     testTimeout: 15_000,
     sequence: {
       groupOrder: 0,
-      hooks: "stack",
-      shuffle: { files: true, tests: false },
-      seed: apiFunctionalTestSeed
+      hooks: "stack"
     }
   }
 });
@@ -27,7 +25,7 @@ export const apiPerformanceTestProject = defineProject({
     name: "api-performance",
     include: [performanceTestFile],
     pool: "forks",
-    poolOptions: { forks: { singleFork: true } },
+    maxWorkers: 1,
     setupFiles: ["src/vitest.setup.ts"],
     retry: 0,
     sequence: { groupOrder: 1 }
@@ -40,6 +38,7 @@ export default defineConfig({
     // exhaust Windows worker/RPC startup resources; two is the measured stable
     // setting for the full API suite while preserving file-level parallelism.
     maxWorkers: 2,
+    sequence: { shuffle: { files: true, tests: false }, seed: apiFunctionalTestSeed },
     projects: [apiFunctionalTestProject, apiPerformanceTestProject]
   }
 });

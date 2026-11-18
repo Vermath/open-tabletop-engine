@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { changesRealtimeRecord } from "./realtime-snapshot-delta.js";
 
 const actorPanelSource = readFileSync(resolve(__dirname, "actor-panel.tsx"), "utf8");
 const appSource = readFileSync(resolve(__dirname, "App.tsx"), "utf8");
@@ -33,11 +34,14 @@ describe("actor action preview wiring", () => {
     expect(appSource).toContain('key={`actor-panel:${campaignId}:${selectedActor?.id ?? "none"}:${selectedScene?.id ?? "none"}:${activeCombat?.id ?? "none"}`}');
   });
 
-  it("makes the two review stages explicit without bypassing exact prepared commit", () => {
-    expect(actorPanelSource).toContain("Step 1 of 2 ready - nothing committed");
-    expect(actorPanelSource).toContain("Continue to final review opens the exact server-prepared consequences");
+  it("keeps the review available and never bypasses the exact prepared commit, even in one step", () => {
+    expect(actorPanelSource).toContain("Preview ready - nothing committed");
+    expect(actorPanelSource).toContain("Continue to final review opens the exact server-prepared consequences first");
     expect(actorPanelSource).toContain('aria-label="Continue to final review"');
-    expect(actorPanelSource).not.toContain('aria-label="Use action"');
+    // One-step use is opt-in per click, and only skips the dialog for a result the server resolved completely.
+    expect(actorPanelSource).toContain("props.useActorAction(previewAction.rollId, { ...previewActionCommitOptions, oneStep: true })");
+    expect(appSource).toContain("committedWithoutReview = Boolean(options.oneStep) && preparedActionIsRoutine(prepared, review);");
+    expect(appSource).toContain("if (!await consequenceReview.review(review)) return { cancelled: true };");
     expect(appSource).toContain("final exact-action review open; nothing committed yet");
     expect(appSource).toContain("preparedPreviewKey: prepared.preparation.preparedPreviewKey");
     expect(appSource).toContain("action pending GM confirmation");
@@ -55,7 +59,8 @@ describe("actor action preview wiring", () => {
     expect(actorPanelSource).toContain("Preview did not bind to the selected committed attack");
     expect(actorPanelSource).toContain("Bound to exact server ticket");
     expect(actorPanelSource).toContain("Retry preview");
-    expect(appSource).toContain("continuationId: options.continuationId");
+    expect(appSource).toContain("actorActionRequest(rollId, actor.updatedAt, { ...options, consumeResources }, diceVisibility)");
+    expect(readFileSync(resolve(__dirname, "actor-action-review.ts"), "utf8")).toContain("continuationId: options.continuationId");
   });
 
   it("includes the Cleave secondary actor and owned items in preview identity", () => {
@@ -69,6 +74,10 @@ describe("actor action preview wiring", () => {
     expect(appSource).toContain("upsertNewestRealtimeRecord(current.actors, actor)");
     expect(appSource).toContain("upsertNewestRealtimeRecord(current.items, item)");
     expect(appSource).toContain("upsertNewestRealtimeRecord(current.combats, combat)");
-    expect(appSource).toContain("knownActor.updatedAt > actor.updatedAt");
+    expect(appSource).toContain("if (!changesRealtimeRecord(knownActor, actor)) return;");
+    expect(changesRealtimeRecord(
+      { updatedAt: "2026-07-17T12:00:02.000Z" },
+      { updatedAt: "2026-07-17T12:00:01.000Z" }
+    )).toBe(false);
   });
 });

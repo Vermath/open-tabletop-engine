@@ -1,9 +1,10 @@
-import { createTimestamped, type Actor, type Item } from "@open-tabletop/core";
+import type { Actor, Item } from "@open-tabletop/api-contracts";
+import { timestampedFixture } from "./test-fixtures.js";
 import { describe, expect, it } from "vitest";
 import { dnd5eSrdCalculationExplanation, dnd5eSrdSavingThrow, resolveDnd5eSrdAction } from "./index.js";
 
 function actor(data: Record<string, unknown>): Actor {
-  return createTimestamped("act", {
+  return timestampedFixture({
     id: "act-save-feature",
     campaignId: "camp-save-feature",
     systemId: "dnd-5e-srd",
@@ -28,7 +29,7 @@ describe("D&D save-feature Advantage", () => {
       formula: "2d20kh1+1",
       metadata: { d20Mode: "advantage", advantageSources: ["Danger Sense"], disadvantageSources: [], advantage: true, feature: "Danger Sense", exceptConditions: ["Incapacitated"] },
     });
-    const ward = createTimestamped("itm", { campaignId: barbarianTwo.campaignId, systemId: barbarianTwo.systemId, actorId: barbarianTwo.id, type: "item" as const, name: "Save Ward", data: { equipped: true, savingThrowBonus: 2 } }) satisfies Item;
+    const ward = timestampedFixture({ id: "itm_save_ward", campaignId: barbarianTwo.campaignId, systemId: barbarianTwo.systemId, actorId: barbarianTwo.id, type: "item" as const, name: "Save Ward", data: { equipped: true, savingThrowBonus: 2 } }) satisfies Item;
     expect(dnd5eSrdSavingThrow(barbarianTwo, "dexterity", [ward])).toMatchObject({ formula: "2d20kh1+3", metadata: expect.objectContaining({ itemBonus: 2 }) });
 
     const imported = actor({ class: "Fighter", level: 1, features: ["Danger Sense"] });

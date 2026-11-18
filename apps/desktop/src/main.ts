@@ -1,15 +1,23 @@
 import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { mkdirSync } from "node:fs";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { app, BrowserWindow, clipboard, ipcMain, shell, type IpcMainInvokeEvent } from "electron";
 import { startApiRuntime, type ApiRuntime } from "@open-tabletop/api/runtime";
-import { startWebStaticRuntime, type WebStaticRuntime } from "@open-tabletop/web/static-runtime";
-import { desktopDataPaths, desktopRendererUrlAllowed, desktopRuntimeEnv, shutdownDesktopResources, type DesktopDataPaths } from "./desktop-runtime.js";
+import { startWebStaticRuntime, type WebStaticRuntime, type WebStaticRuntimeOptions } from "@open-tabletop/web/static-runtime";
+import { desktopDataPaths, desktopRendererUrlAllowed, desktopRuntimeEnv, ensureDesktopAssetSigningSecret, shutdownDesktopResources, type DesktopDataPaths } from "./desktop-runtime.js";
 import { RelayTunnelSession } from "./tunnel-client.js";
 import type { DesktopStatus, StartInternetShareInput } from "./desktop-api.js";
 
 const desktopDir = dirname(fileURLToPath(import.meta.url));
 const relayBaseUrl = process.env.OTTE_RELAY_URL ?? "https://share.open-tabletop.org";
+
+if (app.commandLine.hasSwitch("user-data-dir")) {
+  const userDataRoot = app.commandLine.getSwitchValue("user-data-dir");
+  if (!isAbsolute(userDataRoot)) throw new Error("--user-data-dir must specify an absolute directory path");
+  mkdirSync(userDataRoot, { recursive: true });
+  app.setPath("userData", userDataRoot);
+}
 
 let paths: DesktopDataPaths;
 let apiRuntime: ApiRuntime | undefined;
@@ -24,6 +32,20 @@ async function main(): Promise<void> {
   paths = desktopDataPaths(app.getPath("userData"));
   await ensureDataDirs(paths);
   const env = desktopRuntimeEnv(paths);
+  env.OTTE_ASSET_URL_SIGNING_SECRET = await ensureDesktopAssetSigningSecret(paths, env);
+  const webOptions: WebStaticRuntimeOptions = {
+    host: "127.0.0.1",
+    port: 0,
+    root: resolveWebRoot()
+  };
+  webRuntime = await startWebStaticRuntime(webOptions);
+  // Bind first so cookie authentication trusts this exact renderer origin.
+  if (!env.OTTE_WEB_ORIGIN?.trim()) env.OTTE_WEB_ORIGIN = webRuntime.url;
+  if (!env.OTTE_PUBLIC_URL?.trim()) env.OTTE_PUBLIC_URL = webRuntime.url;
+  env.OTTE_CORS_ALLOWED_ORIGINS = [...new Set([
+    ...(env.OTTE_CORS_ALLOWED_ORIGINS?.split(",") ?? []).map((origin) => origin.trim()).filter(Boolean),
+    webRuntime.url
+  ])].join(",");
   apiRuntime = await startApiRuntime({
     host: "127.0.0.1",
     port: 0,
@@ -32,12 +54,7 @@ async function main(): Promise<void> {
     pluginRoot: paths.pluginDir,
     env
   });
-  webRuntime = await startWebStaticRuntime({
-    host: "127.0.0.1",
-    port: 0,
-    root: resolveWebRoot(),
-    apiBaseUrl: apiRuntime.url
-  });
+  webOptions.apiBaseUrl = apiRuntime.url;
   registerIpcHandlers();
   mainWindow = createMainWindow();
   mainWindow.once("ready-to-show", () => mainWindow?.show());

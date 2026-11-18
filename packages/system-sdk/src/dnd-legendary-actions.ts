@@ -1,4 +1,4 @@
-import type { Actor, Combat, CombatLegendaryActionPrompt } from "@open-tabletop/core";
+import type { Actor, Combat, CombatLegendaryActionPrompt } from "@open-tabletop/api-contracts";
 import type { Dnd5eSrdLegendaryActions } from "./dnd-monster-stat-blocks.js";
 import type { RulesResolutionActorUpdate } from "./dnd-resolution-types.js";
 

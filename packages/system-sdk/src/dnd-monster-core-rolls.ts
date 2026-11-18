@@ -1,4 +1,4 @@
-import type { Actor } from "@open-tabletop/core";
+import type { Actor } from "@open-tabletop/api-contracts";
 
 function recordValue(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};

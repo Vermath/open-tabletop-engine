@@ -24,6 +24,8 @@ function operatorHeaders(key: string) {
 async function fixture() {
   const store = new MemoryStateStore();
   store.state.users.find((user) => user.id === "usr_demo_gm")!.serverAdmin = true;
+  store.save();
+  store.flush();
   const app = await buildApp({ store, rateLimit: { enabled: false } });
   return { app, store };
 }

@@ -28,6 +28,7 @@ class CountingMemoryStateStore extends MemoryStateStore {
 
   override save(): void {
     this.saveCount += 1;
+    super.save();
   }
 }
 
@@ -832,6 +833,8 @@ function seedSession(store: MemoryStateStore, userId: string): { token: string }
       lastSeenAt: new Date().toISOString(),
     }) satisfies UserSession,
   );
+  store.save();
+  store.flush();
   return { token };
 }
 

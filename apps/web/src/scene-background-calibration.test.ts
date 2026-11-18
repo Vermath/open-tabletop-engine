@@ -131,14 +131,14 @@ describe("scene background calibration", () => {
 
     expect(saveSettings).toContain("sceneMapConfigurationMetadata(targetScene, mapConfiguration");
     expect(saveSettings).toContain("finishSceneBackgroundChange(scene");
-    expect(uploadMap).toContain("resetSceneMapCalibration(uploaded.scene");
+    expect(uploadMap).toContain("uploadPreparedSceneMap({ scene: latestScene");
     expect(uploadMap).toContain("finishSceneBackgroundChange(result.scene");
-    expect(uploadLibrary).toContain("resetSceneMapCalibration(uploaded.scene");
-    expect(uploadLibrary).toContain("sceneWithBackgroundChange(demoScene");
+    expect(uploadLibrary).toContain("uploadPreparedSceneMap({ scene: currentSceneForMutation(backgroundScene)");
+    expect(uploadLibrary).toContain("await setSceneBackgroundFromAsset(asset)");
     expect(uploadLibrary).toContain("finishSceneBackgroundChange(result.scene");
-    expect(setExisting).toContain("sceneBackgroundChangePayload(latest, asset.id)");
-    expect(setExisting).toContain("sceneWithBackgroundChange(targetScene, asset.id");
-    expect(setExisting).toContain("finishSceneBackgroundChange(updated, asset.name)");
+    expect(setExisting).toContain("setPreparedSceneMap(input)");
+    expect(setExisting).toContain("sceneMapBackgroundPayload(targetScene, asset, preparation)");
+    expect(setExisting).toContain("finishSceneBackgroundChange(result.scene, asset.name");
     expect(appSource).toContain("sceneBackgroundChangePlan(scene, assetName");
     expect(appSource).toContain("setGridCalibrationOpen(plan.calibrationOpen)");
     expect(appSource).toContain("const next = !gridCalibrationOpen");

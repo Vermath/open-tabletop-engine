@@ -1,35 +1,35 @@
 # Product Roadmap
 
-## 2026-07-17 remediation-complete roadmap (authoritative)
+## Alpha qualification roadmap
+
+Updated 2026-11-17. Outside-session capture (X01, RQ03–RQ04) is retired across all milestones.
 
 This roadmap supersedes conflicting 2026-07-16 sequencing. N01-N20 and the code-addressable T38-T48 follow-ups are implemented in the current uncommitted tree. The next milestone is no longer feature remediation; it is **Alpha Evidence and Release Qualification**.
 
 ### First milestone: Alpha Evidence and Release Qualification
 
-**Outcome:** a clean, reproducible candidate that has survived real GM/player use and an independent hosted recovery drill, with every discovered blocker returned through the same typed, permission-checked implementation and regression process.
+**Outcome:** a clean, reproducible candidate that passes the GM/player workflows and an independent hosted recovery drill, with every discovered blocker returned through the same typed, permission-checked implementation and regression process.
 
-**Exit:** final local aggregate/browser gates are green; X01 includes at least three observed sessions with correction/conflict/recovery notes; X03 restores non-empty state and assets into a clean environment; no unresolved Critical/High defect from those exercises remains.
+**Exit:** final local aggregate/browser gates are green; X03 restores non-empty state and assets into a clean environment; no unresolved Critical/High defect from those exercises remains.
 
-**Current status:** the RQ01 local prerequisite is complete as of 2026-07-17. The milestone remains open for RQ02-RQ10, especially X01 real-table evidence and X03 independent hosted recovery.
+**Current status:** the RQ01 local prerequisite is complete as of 2026-07-17. The milestone remains open for the remaining items below, including X03 independent hosted recovery.
 
-### Ordered next ten work items
+### Qualification work items
 
-| Order | Work item | Exit evidence |
-|---:|---|---|
-| 1 | RQ01 final local qualification - **complete locally 2026-07-17** | `pnpm check`, default 62/62 plus bootstrap 1/1, canonical restart 1/1, full Level 3 combat 1/1, docs check, and diff hygiene are green on the exact working tree. |
-| 2 | RQ02 independent quickstart | A person other than the implementer reaches a healthy table from the documented Compose path. |
-| 3 | RQ03 X01 session one | GM/player setup, correction, conflict, privacy, and recovery observations captured. |
-| 4 | RQ04 X01 sessions two and three | Repeated evidence plus abandonment and recurring-campaign observations captured. |
-| 5 | RQ05 session findings closure | Every code defect gets a regression; product choices are recorded rather than hidden as bugs. |
-| 6 | RQ06 X03 hosted recovery | Timestamped non-no-op state-plus-asset backup, clean restore, forward migration, and rollback. |
-| 7 | RQ07 X05 operating envelope | HTTPS/proxy/capacity/realtime/alerts/incident drill on the selected topology. |
-| 8 | RQ08 X04 physical access matrix | Named screen-reader, browser, keyboard, and touch tasks completed on physical devices. |
-| 9 | RQ09 X06 and X07 approvals | Content inventory/legal approval and independent security review with no unaccepted Critical/High issue. |
-| 10 | RQ10 X08 AI qualification | Required only if AI is offered: representative provider, quality, privacy, failure, and adversarial evaluation. |
+| Work item | Exit evidence |
+|---|---|
+| RQ01 final local qualification - **complete locally 2026-07-17** | `pnpm check`, default 62/62 plus bootstrap 1/1, canonical restart 1/1, full Level 3 combat 1/1, docs check, and diff hygiene are green on the exact working tree. |
+| RQ02 independent quickstart | A person other than the implementer reaches a healthy table from the documented Compose path. |
+| RQ05 qualification findings closure | Every code defect gets a regression; product choices are recorded rather than hidden as bugs. |
+| RQ06 X03 hosted recovery | Timestamped non-no-op state-plus-asset backup, clean restore, forward migration, and rollback. |
+| RQ07 X05 operating envelope | HTTPS/proxy/capacity/realtime/alerts/incident drill on the selected topology. |
+| RQ08 X04 physical access matrix | Named screen-reader, browser, keyboard, and touch tasks completed on physical devices. |
+| RQ09 X06 and X07 approvals | Content inventory/legal approval and independent security review with no unaccepted Critical/High issue. |
+| RQ10 X08 AI qualification | Required only if AI is offered: representative provider, quality, privacy, failure, and adversarial evaluation. |
 
 ### What not to build yet
 
-No voice/video, social network, hostile third-party marketplace, universal automation engine, hex-grid parity, HA/multi-region topology, microservice rewrite, or additional AI surface belongs ahead of RQ02-RQ10. The product needs evidence and table feedback, not another breadth tranche.
+No voice/video, social network, hostile third-party marketplace, universal automation engine, hex-grid parity, HA/multi-region topology, microservice rewrite, or additional AI surface belongs ahead of the remaining qualification work in this sequence.
 
 ## 2026-07-16 roadmap addendum (authoritative)
 
@@ -59,7 +59,7 @@ A new DM and one player can create or resume legal level-3 characters, prepare a
 - **Non-goals:** unassisted install, broad device support, full spell automation, or public security posture.
 - **Reliability / rules / data loss:** no manual database repair; no contradictory actor/combat state; manual rulings are visible rather than silently automated.
 - **Security / migration / docs:** server permissions remain mandatory; local archive round trip and developer runbook work.
-- **Exit / metrics:** complete M0 and M1, then run one two-hour internal session with no severity-1 state divergence, no lost draft, and a successful reconnect/resume.
+- **Exit / metrics:** complete M0 and M1, then verify the campaign flow with no severity-1 state divergence, no lost draft, and a successful reconnect/resume.
 
 #### Private alpha
 
@@ -69,7 +69,7 @@ A new DM and one player can create or resume legal level-3 characters, prepare a
 - **Non-goals:** anonymous signup, hostile plugins, proprietary content, high availability, or every device.
 - **Reliability / rules / data loss:** no known Critical/High rules-integrity defect; committed-state loss is unacceptable; restore point and rollback behavior are published.
 - **Security / migration / docs:** close self-host configuration, AI-lock, scanner-policy, and selected realtime risks; versioned migrations, upgrade/restore runbooks, known limitations.
-- **Exit / metrics:** three recurring external sessions; independent install, upgrade, reconnect, and clean restore; no unresolved High campaign-data/rules blocker.
+- **Exit / metrics:** independent install, upgrade, reconnect, and clean restore; no unresolved High campaign-data/rules blocker.
 
 #### Public beta
 
@@ -79,7 +79,7 @@ A new DM and one player can create or resume legal level-3 characters, prepare a
 - **Non-goals:** feature parity with every VTT, universal rules scripting, voice/video, or hostile marketplace.
 - **Reliability / rules / data loss:** hosted SLOs, incident process, migration telemetry, capacity/recovery evidence, and no unaccepted Critical/High rules defect.
 - **Security / migration / docs:** cookie/session transport, CSP, revocation, proxy/account throttling, supply-chain pinning, independent security/accessibility review, privacy and limitations docs.
-- **Exit / metrics:** security/accessibility findings closed or explicitly accepted below High; beta cohort completes sessions and restores within published targets; support volume is diagnosable.
+- **Exit / metrics:** security/accessibility findings closed or explicitly accepted below High; campaign play and restore checks meet published targets; support volume is diagnosable.
 
 #### Version 1.0
 
@@ -87,9 +87,9 @@ A new DM and one player can create or resume legal level-3 characters, prepare a
 - **Required workflow:** sustained creation, preparation, play, advancement, campaign knowledge, portability, upgrades, and recovery across supported releases.
 - **Required D&D capability:** stable advertised compatibility and support boundaries, not universal automation.
 - **Non-goals:** breadth for its own sake, multi-system redesign, or infrastructure whose need has not appeared in operation.
-- **Reliability / rules / data loss:** sustained beta reliability/retention, supported rollback windows, no unresolved release-blocking correctness or security finding.
+- **Reliability / rules / data loss:** sustained beta reliability, supported rollback windows, no unresolved release-blocking correctness or security finding.
 - **Security / migration / docs:** published compatibility policy, deprecation window, operator/user documentation, incident and vulnerability process.
-- **Exit / metrics:** multiple successful upgrade cohorts, stable recurring-session completion and restore rates, demonstrated accessibility, and supportable operations over a full release cycle.
+- **Exit / metrics:** multiple successful upgrade cohorts, passing campaign resume and restore checks on supported releases, demonstrated accessibility, and supportable operations over a full release cycle.
 
 
 ### Authoritative priority definitions
@@ -108,10 +108,10 @@ A new DM and one player can create or resume legal level-3 characters, prepare a
 | Milestone | Target outcome | Complete workflows | Rules investment | Reliability / data loss | Security / operations | Migration / docs | Exit evidence |
 |---|---|---|---|---|---|---|---|
 | M0 - Deterministic core loop | The current build becomes a Foundation/internal-playtest candidate | Attack -> damage -> HP -> defeat/recovery; atomic group movement; canonical journey | Critical outcome; actor/combatant life-state projection | Remove canonical flake; make aggregate API suite bounded and diagnosable | Shorten AI mutation critical sections or disable AI in alpha profile | Document working-tree tranche and compatibility notes | Critical and recovery matrices pass; canonical journey 10/10; aggregate gate green twice from cold state |
-| M1 - Session-speed combat and character integrity | A DM and player can run ordinary level-3 play without leaving the primary surfaces | Combat HP/temp HP, roster changes, resumable creator, complete sheet lists, one guided map setup | Ability allocation; class-complete spell grant attribution; movement bonuses; subclass gating | Draft recovery; reconnect assertions around active combat | Permission-aware batch commands and explicit denial UX | Schema/API changes are additive with archive round-trip fixtures | Moderated first-session test completes with no developer intervention and no severity-1 state divergence |
-| M2 - Recurring campaign evidence | The same group can play repeatedly and trust campaign continuity | Journals/handouts, search/paging, whisper flow, advancement between sessions, archive restore | Selected persistent effects and common class features based on observed play | Multi-session soak; restore drill; asset/database pairing; migration rehearsal | Realtime sequence coverage for AI/agent events; OpenAPI/revision guard parity | Operator runbook, restore runbook, compatibility matrix, sample campaign | Three recurring sessions, restore proof, reconnect proof, no unresolved high-severity campaign-data defect |
+| M1 - Session-speed combat and character integrity | A DM and player can run ordinary level-3 play without leaving the primary surfaces | Combat HP/temp HP, roster changes, resumable creator, complete sheet lists, one guided map setup | Ability allocation; class-complete spell grant attribution; movement bonuses; subclass gating | Draft recovery; reconnect assertions around active combat | Permission-aware batch commands and explicit denial UX | Schema/API changes are additive with archive round-trip fixtures | The two-client first-session workflow completes without developer intervention or severity-1 state divergence |
+| M2 - Recurring campaign evidence | The same group can play repeatedly and trust campaign continuity | Journals/handouts, search/paging, whisper flow, advancement between sessions, archive restore | Selected persistent effects and common class features based on observed play | Multi-session soak; restore drill; asset/database pairing; migration rehearsal | Realtime sequence coverage for AI/agent events; OpenAPI/revision guard parity | Operator runbook, restore runbook, compatibility matrix, sample campaign | Campaign continuity, restore proof, reconnect proof, no unresolved high-severity campaign-data defect |
 | M3 - Private self-hosted alpha | A small invited cohort can install, operate, upgrade, and recover | Complete Docker quickstart and admin/backup workflows | Rules gaps are labeled and manual adjudication remains first-class | Scheduled backup proof, upgrade/rollback rehearsal, bounded observability | Fix Compose storage/secret wiring; account-aware login throttling; scanner outbound policy | Versioned release notes, migrations, admin checklist, support intake | Independent install succeeds; restore and upgrade evidence; supportable failure diagnostics |
-| M4 - Public beta trust | Untrusted users can use the product without avoidable security or accessibility hazards | Responsive onboarding, keyboard-complete core board tasks, polished handouts/chat management | Depth from playtest evidence, not catalog vanity | Hosted SLOs, incident process, load evidence, migration telemetry | Cookie session transport, CSP, token migration/revocation, proxy-aware rate limiting, dependency/image pinning | Privacy/security docs, accessibility statement, public known-limitations page | Security review, accessibility audit, load/recovery evidence, hosted beta cohort metrics |
+| M4 - Public beta trust | Untrusted users can use the product without avoidable security or accessibility hazards | Responsive onboarding, keyboard-complete core board tasks, polished handouts/chat management | Depth from playtest evidence, not catalog vanity | Hosted SLOs, incident process, load evidence, migration telemetry | Cookie session transport, CSP, token migration/revocation, proxy-aware rate limiting, dependency/image pinning | Privacy/security docs, accessibility statement, public known-limitations page | Security review, accessibility audit, and hosted load and recovery checks |
 
 ### Milestone prerequisites and risks
 
@@ -119,7 +119,7 @@ A new DM and one player can create or resume legal level-3 characters, prepare a
 |---|---|---|---|
 | M0 | Current dirty rules/E2E tranche is inventoried; focused fixtures can run from clean state | Preview/realtime race, partial batch writes, global durable lock, shared test resources and worker teardown | Critical dice, zero-HP recovery, and action/resource regressions in the core combat-state loop |
 | M1 | M0 state transitions and gates are stable; shared creation/advancement types are available | Draft/version migration, duplicated client derivation, list/paging contract compatibility, session-panel state churn | Legal ability assignment, spell grant source/casting ability, speed prerequisites, and subclass ownership |
-| M2 | M0+M1 complete; a recurring group and campaign-scale fixtures are available | Journal/handout draft recovery, search/paging scale, realtime sequence gaps, archive DB/assets pairing | Persistent effect duration/stacking, advancement between sessions, and honest manual adjudication boundaries |
+| M2 | M0+M1 complete; campaign-scale fixtures are available | Journal/handout draft recovery, search/paging scale, realtime sequence gaps, archive DB/assets pairing | Persistent effect duration/stacking, advancement between sessions, and honest manual adjudication boundaries |
 | M3 | M0+M1 product loop is stable; M2 recovery evidence and an independent operator/environment are available | Storage/TLS/secret mismatch, backup scheduler wiring, upgrade/rollback, proxy and scanner egress configuration | Advertised class/spell support must match the tested matrix; manual effects must not be presented as automatic |
 | M4 | M3 independent install/restore succeeds; external security/accessibility reviewers and hosted telemetry exist | Session-token migration, CSP compatibility, rate-limit rollout, capacity/incident operations, device/AT coverage | Public rules claims, content provenance, and migration must not silently change authoritative character/campaign state |
 
@@ -169,7 +169,7 @@ Deliver:
 
 **Integration requirements:** reuse shared core/System SDK types; add typed commands and permission checks; keep archive compatibility fixtures; do not mutate storage from plugins.
 
-**Exit criteria:** a first-time DM/player usability session completes character creation, map setup, invite, and combat without data loss, hidden required controls, developer assistance, or a high-severity rules correction.
+**Exit criteria:** the first-run GM/player workflow covers character creation, map setup, invite, and combat without data loss, hidden required controls, developer assistance, or a high-severity rules correction.
 
 ### M2 - Recurring campaign evidence
 
@@ -186,7 +186,7 @@ Deliver:
 - archive restore drills that pair database and assets;
 - migration fixtures from the prior supported release and one rollback rehearsal.
 
-**Exit criteria:** one external group completes three sessions, including advancement, reconnect, archive export/restore, and a facilitator-recorded usability review; no open data-loss or rules-integrity blocker remains.
+**Exit criteria:** campaign workflow checks cover advancement, reconnect, and archive export/restore, with no open data-loss or rules-integrity blocker.
 
 ### M3 - Private self-hosted alpha
 
@@ -216,7 +216,7 @@ Deliver:
 - hosted observability, incident response, capacity evidence, and privacy/security documentation;
 - public limitations that distinguish automated SRD mechanics from DM-adjudicated effects.
 
-**Exit criteria:** independent security and accessibility reviews close all critical/high findings; hosted load/recovery targets pass; beta retention and session-completion metrics justify further rules depth.
+**Exit criteria:** independent security and accessibility reviews close all critical/high findings, and hosted load and recovery checks meet their targets.
 
 ### Explicitly not now
 

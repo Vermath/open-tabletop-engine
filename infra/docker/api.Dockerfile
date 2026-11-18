@@ -1,6 +1,7 @@
-FROM node:22-alpine@sha256:16e22a550f3863206a3f701448c45f7912c6896a62de43add43bb9c86130c3e2 AS base
+FROM node:26-alpine@sha256:e88a35be04478413b7c71c455cd9865de9b9360e1f43456be5951032d7ac1a66 AS base
 WORKDIR /app
-RUN corepack enable
+# Node.js 25+ no longer bundles Corepack, so install it explicitly.
+RUN npm install -g corepack@0.36.0 && corepack enable
 
 FROM base AS deps
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml turbo.json tsconfig.base.json ./
@@ -21,6 +22,7 @@ COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
 COPY --from=build /app/packages ./packages
 COPY --chown=node:node --from=build /app/plugins ./plugins
 COPY --from=build /app/apps/api/dist ./apps/api/dist
+COPY --from=build /app/apps/api/demo-art ./apps/api/demo-art
 COPY --from=build /app/api-build-fingerprint ./api-build-fingerprint
 COPY apps/api/package.json ./apps/api/package.json
 RUN mkdir -p /app/storage/plugins /app/uploads && chown -R node:node /app/storage /app/uploads

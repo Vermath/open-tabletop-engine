@@ -5,6 +5,23 @@ export function normalizeSceneGridType(value: unknown): GridType {
   return value === "gridless" ? "gridless" : "square";
 }
 
+export function normalizeSceneVisibilityMode(value: unknown): NonNullable<Scene["visibilityMode"]> {
+  return value === "dynamic" ? "dynamic" : "fog";
+}
+
+export function SceneVisibilityField(props: { mode: "create" | "edit"; value: NonNullable<Scene["visibilityMode"]>; onChange(value: NonNullable<Scene["visibilityMode"]>): void }) {
+  return <>
+    <label className="span-full">
+      <span>Player visibility</span>
+      <select aria-label={`${props.mode === "edit" ? "Edit scene" : "Scene"} player visibility`} name={props.mode === "edit" ? "sceneEditVisibilityMode" : undefined} value={props.value} onChange={(event) => props.onChange(normalizeSceneVisibilityMode(event.target.value))}>
+        <option value="fog">Authored fog</option>
+        <option value="dynamic">Dynamic lighting</option>
+      </select>
+    </label>
+    <p className="account-summary span-full" role="note">{props.value === "dynamic" ? "Players need an owned token with vision and a light source or a sense such as darkvision. Walls and closed doors block sight. Hide fog always conceals an area." : "Reveal and hide areas with the fog tools. Without fog, players see the map and ordinary tokens."}</p>
+  </>;
+}
+
 export function sceneGridSummary(scene: Pick<Scene, "width" | "height" | "gridType" | "gridSize">): string {
   return scene.gridType === "gridless"
     ? `${scene.width} x ${scene.height} / gridless`
@@ -47,7 +64,8 @@ export function SceneGridFields(props: {
             aria-label={`${labelPrefix} grid size`}
             name={edit ? "sceneEditGridSize" : undefined}
             type="number"
-            min={10}
+            min={1}
+            step="any"
             value={props.gridSize}
             onChange={(event) => props.onGridSizeChange(Number(event.target.value))}
           />

@@ -19,7 +19,7 @@ class DurableAiTestStore extends MemoryStateStore {
     this.pending = false;
   }
 
-  restoreDurableState(): void {
+  override restoreDurableState(): void {
     this.pending = false;
     this.state = structuredClone(this.persisted);
   }

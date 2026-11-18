@@ -1,4 +1,4 @@
-import type { Actor, CalculationFieldExplanation, CompendiumCatalogEntry, CompendiumProvenance } from "@open-tabletop/core";
+import type { Actor, CalculationFieldExplanation, CompendiumCatalogEntry, CompendiumProvenance } from "@open-tabletop/api-contracts";
 import { describe, expect, it } from "vitest";
 
 import { dnd5eCustomMonsterActorData, dnd5eMonsterContentDataFromStatBlock } from "./dnd-monster-variants.js";

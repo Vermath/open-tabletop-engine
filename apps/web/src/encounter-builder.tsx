@@ -1,3 +1,4 @@
+import { EmptyState } from "./workspace-states.js";
 import type { Actor, Encounter, EncounterMonsterPlacementDraft, Scene, Token } from "@open-tabletop/core";
 import { FilePlus2, Minus, Plus, Save, Search, Swords, Trash2, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -550,7 +551,7 @@ export function EncounterBuilderDialog(props: {
             </button>
           </div>
           <div className="encounter-saved-list">
-            {availableSavedEncounters.length === 0 ? <div className="empty-state compact">No saved encounters yet.</div> : availableSavedEncounters.map((encounter) => {
+            {availableSavedEncounters.length === 0 ? <EmptyState icon={<Swords size={17} />} text="No saved encounters yet." action={props.canSave ? { label: "Start an encounter", disabled: saving || deleting, run: beginNewEncounter } : undefined} /> : availableSavedEncounters.map((encounter) => {
               const compositionAvailable = encounter.systemId === props.systemId && encounter.threats !== undefined;
               return (
                 <button

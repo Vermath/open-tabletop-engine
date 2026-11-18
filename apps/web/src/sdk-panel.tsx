@@ -1,14 +1,101 @@
-import type { Actor, Dnd5eSrdPendingAdvancement } from "@open-tabletop/core";
+import type { Actor, Campaign, Dnd5eSrdPendingAdvancement, SystemManifestIdentity } from "@open-tabletop/core";
 import { ChevronRight, Plus, RefreshCw, RotateCcw, Shield, Swords, Upload, UserPlus, WandSparkles, X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { dnd5eSrdArcaneRecoverySelection } from "./actor-sheet-data.js";
-import type { CharacterTemplateInfo, PluginRuntimeInfo, SystemRuntimeInfo } from "./api.js";
+import { ApiError, apiPost, type CharacterTemplateInfo, type PluginRuntimeInfo, type SystemRuntimeInfo } from "./api.js";
+import { RetryableActionNotice, useRetryableAction } from "./retryable-action.js";
 import { errorMessage, formatDateTime, formatNumber } from "./sheet-format.js";
-import { systemRollLabel, type AdvancementOptionInfo } from "./system-actions.js";
+import { prepareDeclarativeCharacter, prepareSystemActivation, prepareSystemBinding, prepareSystemManifestInstall, systemRollId, systemRollLabel, type AdvancementOptionInfo } from "./system-actions.js";
 import { AdvancementFlow, type AdvancementChoicePayload, type AdvancementFeatInfo, type AdvancementMulticlassOption, type AdvancementPreviewEnvelope, type AdvancementSubclassOption, type AdvancementWeaponMasteryInfo } from "./advancement-flow.js";
 import type { AdvancementSpellPathInfo } from "./advancement-spell-choices.js";
 import { HitDiceRestCard, type ActorRestOptions, type RestPreviewEnvelope } from "./hit-dice-rest-card.js";
 import { useModalAccessibility } from "./modal-accessibility.js";
+
+export interface SystemManagementContext {
+  campaign: Pick<Campaign, "id" | "updatedAt">;
+  currentUserId: string;
+  canRegisterSystem: boolean;
+  onChanged(actor?: Actor): Promise<void>;
+  onOpenActorSheet(actor: Actor): void;
+}
+
+export function DeclarativeSystemControls(props: { context: SystemManagementContext; system?: SystemRuntimeInfo; canManage: boolean; canCreate: boolean }) {
+  const { context, system } = props;
+  const scope = JSON.stringify([context.campaign.id, context.currentUserId, system?.id]);
+  const scopeRef = useRef(scope);
+  scopeRef.current = scope;
+  const mounted = useRef(true);
+  const controllers = useRef(new Set<AbortController>());
+  const action = useRetryableAction(scope);
+  const [manifestJson, setManifestJson] = useState("");
+  const [versionKey, setVersionKey] = useState("");
+  const [name, setName] = useState("");
+  const [status, setStatus] = useState("");
+  useEffect(() => {
+    mounted.current = true;
+    setManifestJson(""); setVersionKey(""); setName(""); setStatus("");
+    return () => { mounted.current = false; for (const controller of controllers.current) controller.abort(); controllers.current.clear(); };
+  }, [scope]);
+  const busy = action.operation?.kind === "pending";
+  const versions = system?.installedVersions ?? [];
+  const identityKey = (identity: SystemManifestIdentity) => `${identity.version}:${identity.checksum}`;
+  const selectedVersion = versions.find((version) => identityKey(version) === versionKey) ?? versions.find((version) => system?.binding && identityKey(version) === identityKey(system.binding)) ?? versions[0];
+  const alreadyBound = Boolean(selectedVersion && system?.binding && identityKey(selectedVersion) === identityKey(system.binding));
+
+  function run(label: string, prepare: () => { path: string; payload: unknown; idempotencyKey: string }, createsActor = false) {
+    let request: ReturnType<typeof prepare> | undefined;
+    void action.runAction(label, async () => {
+      if (!mounted.current || scopeRef.current !== scope) return;
+      request ??= prepare();
+      const controller = new AbortController();
+      controllers.current.add(controller);
+      const isCurrent = () => mounted.current && scopeRef.current === scope && !controller.signal.aborted;
+      try {
+        const result = await apiPost<Actor>(request.path, request.payload, { signal: controller.signal, idempotencyKey: request.idempotencyKey });
+        if (!isCurrent()) return;
+        await context.onChanged(createsActor ? result : undefined);
+        if (!isCurrent()) return;
+        setStatus(`${label} completed.`);
+        if (createsActor) { setName(""); context.onOpenActorSheet(result); }
+      } catch (error) {
+        if (!isCurrent()) return;
+        const issues = error instanceof ApiError && error.body && typeof error.body === "object" && "issues" in error.body && Array.isArray(error.body.issues) ? error.body.issues : [];
+        const diagnostics = issues.map((issue: unknown) => issue && typeof issue === "object" && "message" in issue && typeof issue.message === "string" ? issue.message : "").filter(Boolean);
+        if (diagnostics.length) throw new Error(`${errorMessage(error)} ${diagnostics.join(" ")}`);
+        throw error;
+      } finally { controllers.current.delete(controller); }
+    });
+  }
+
+  return <section className="operator-section" aria-label={system ? `${system.name} rules management` : "Install rules manifest"}>
+    <RetryableActionNotice operation={action.operation} onRetry={action.retryAction ? () => void action.retryAction?.() : undefined} onDismiss={action.clearAction} />
+    {!system ? context.canRegisterSystem && <details className="create-drawer">
+      <summary><Upload size={15} /> Install rules manifest</summary>
+      <p>Paste a JSON rules definition with character fields, defaults, and quick rolls. The server checks the supported limits and validates it before installation.</p>
+      <form onSubmit={(event) => { event.preventDefault(); const attemptId = globalThis.crypto.randomUUID(); run("Install rules manifest", () => prepareSystemManifestInstall(context.campaign.id, manifestJson, attemptId)); }}>
+        <label><span>Rules manifest JSON</span><textarea aria-label="Rules manifest JSON" rows={10} value={manifestJson} disabled={busy} onChange={(event) => setManifestJson(event.currentTarget.value)} /></label>
+        <button className="ghost-button" type="submit" disabled={busy || !manifestJson.trim()}>Install manifest</button>
+      </form>
+    </details> : <>
+      <div className="metric-row"><span>Campaign rules version</span><strong title={system.binding?.checksum}>{system.binding ? `${system.binding.version} · ${system.binding.checksum.slice(0, 12)}` : "Not bound"}</strong></div>
+      <label className="sheet-row"><span>Installed version</span><select aria-label={`${system.name} installed version`} value={selectedVersion ? identityKey(selectedVersion) : ""} disabled={busy || !props.canManage} onChange={(event) => setVersionKey(event.currentTarget.value)}>
+        {versions.length === 0 && <option value="">No installed versions</option>}
+        {versions.map((version) => <option key={identityKey(version)} value={identityKey(version)} title={version.checksum}>{version.version} · {version.checksum.slice(0, 12)}</option>)}
+      </select></label>
+      <p>Choose the exact version for this campaign. Existing characters and items must pass its rules before the version can change.</p>
+      <div className="button-row">
+        <button className="ghost-button" type="button" disabled={busy || !props.canManage || !selectedVersion || alreadyBound} onClick={() => { if (selectedVersion) run(system.binding ? "Change rules version" : "Bind rules version", () => prepareSystemBinding(context.campaign, system, selectedVersion)); }}>{system.binding ? "Change rules version" : "Bind rules version"}</button>
+        {!system.active && <button className="ghost-button" type="button" disabled={busy || !props.canManage || !system.binding} onClick={() => run("Activate rules system", () => prepareSystemActivation(context.campaign, system))}>Activate</button>}
+      </div>
+      {props.canCreate && <form onSubmit={(event) => { event.preventDefault(); const attemptId = globalThis.crypto.randomUUID(); run("Create character", () => prepareDeclarativeCharacter(context.campaign.id, system, name, context.currentUserId, attemptId), true); }}>
+        <label className="sheet-row"><span>Character name</span><input aria-label={`${system.name} character name`} value={name} disabled={busy || !system.binding} onChange={(event) => setName(event.currentTarget.value)} /></label>
+        <button className="ghost-button" type="submit" disabled={busy || !system.binding || !name.trim()}><UserPlus size={15} /> Create character</button>
+      </form>}
+    </>}
+    {status && <p className="admin-status" role="status">{status}</p>}
+    <button className="ghost-button small" type="button" disabled={busy} onClick={() => void action.runAction("Refresh rules catalog", async () => { if (!mounted.current || scopeRef.current !== scope) return; try { await context.onChanged(); } catch (error) { if (mounted.current && scopeRef.current === scope) throw error; } })}>Refresh rules catalog</button>
+  </section>;
+}
 
 interface PluginInstallReview {
   plugin: PluginRuntimeInfo;
@@ -36,7 +123,7 @@ export function pluginInstallActionLabel(plugin: PluginRuntimeInfo, version = pl
   return `Roll back to ${version}`;
 }
 
-export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; advancementOptions: AdvancementOptionInfo[]; advancementGrantsFeat: boolean; advancementFeats: AdvancementFeatInfo[]; multiclassOptions: AdvancementMulticlassOption[]; advancementClassName?: string; nextClassLevel?: number; requiresSubclass?: boolean; subclassOptions: AdvancementSubclassOption[]; weaponMastery?: AdvancementWeaponMasteryInfo; spellAdvancementPaths?: AdvancementSpellPathInfo[]; pendingAdvancement?: Dnd5eSrdPendingAdvancement; importedActor?: Actor; createdMonster?: Actor; onSyncPluginRegistries(): void; onInstallPlugin(plugin: PluginRuntimeInfo, version: string, permissions: string[]): void | Promise<void>; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onOpenCharacterCreator(): void; onImportCharacter(): void; onCreateMonster(): void; onPreviewActor(optionId: string | undefined, choices: AdvancementChoicePayload, idempotencyKey: string): Promise<AdvancementPreviewEnvelope>; onAdvanceActor(optionId?: string, choices?: AdvancementChoicePayload): void | Promise<void>; onCancelPendingAdvancement?(pending: Dnd5eSrdPendingAdvancement): void | Promise<void>; onPreviewRestActor(restType: "short" | "long", options: ActorRestOptions, idempotencyKey: string): Promise<RestPreviewEnvelope>; onRestActor(restType: "short" | "long", options?: ActorRestOptions): void | Promise<void>; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canRestActor: boolean; canRollSystem: boolean }) {
+export function SdkPanel(props: { systemManagement?: SystemManagementContext; plugins: PluginRuntimeInfo[]; systems: SystemRuntimeInfo[]; characterTemplates: CharacterTemplateInfo[]; actor?: Actor; advancementOptions: AdvancementOptionInfo[]; advancementGrantsFeat: boolean; advancementFeats: AdvancementFeatInfo[]; multiclassOptions: AdvancementMulticlassOption[]; advancementClassName?: string; nextClassLevel?: number; requiresSubclass?: boolean; subclassOptions: AdvancementSubclassOption[]; weaponMastery?: AdvancementWeaponMasteryInfo; spellAdvancementPaths?: AdvancementSpellPathInfo[]; pendingAdvancement?: Dnd5eSrdPendingAdvancement; importedActor?: Actor; createdMonster?: Actor; onSyncPluginRegistries(): void; onInstallPlugin(plugin: PluginRuntimeInfo, version: string, permissions: string[]): void | Promise<void>; onInstallSystem(system: SystemRuntimeInfo): void; onCreateCharacter(template: CharacterTemplateInfo): void; onOpenCharacterCreator(): void; onImportCharacter(): void; onCreateMonster(): void; onPreviewActor(optionId: string | undefined, choices: AdvancementChoicePayload, idempotencyKey: string): Promise<AdvancementPreviewEnvelope>; onAdvanceActor(optionId?: string, choices?: AdvancementChoicePayload): void | Promise<void>; onCancelPendingAdvancement?(pending: Dnd5eSrdPendingAdvancement): void | Promise<void>; onPreviewRestActor(restType: "short" | "long", options: ActorRestOptions, idempotencyKey: string): Promise<RestPreviewEnvelope>; onRestActor(restType: "short" | "long", options?: ActorRestOptions): void | Promise<void>; onRunCommand(plugin: PluginRuntimeInfo, command: string): void; onSystemRoll(): void; canInstall: boolean; canInstallSystem: boolean; canCreateActor: boolean; canImportActor: boolean; canAdvanceActor: boolean; canRestActor: boolean; canRollSystem: boolean }) {
   const [pluginSearch, setPluginSearch] = useState("");
   const [pluginSourceFilter, setPluginSourceFilter] = useState<"all" | "local" | "registry">("all");
   const [pluginStatusFilter, setPluginStatusFilter] = useState<"all" | "installed" | "available" | "upgrade">("all");
@@ -53,6 +140,7 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
   const installReviewDialogRef = useModalAccessibility<HTMLDivElement>(closeInstallReview, { enabled: Boolean(installReview) });
   const activeSystem = props.systems.find((system) => system.active) ?? props.systems[0];
   const rollLabel = systemRollLabel(props.actor?.systemId);
+  const actorUsesBundledRules = Boolean(props.actor && systemRollId(props.actor.systemId));
   const arcaneRecovery = props.actor ? dnd5eSrdArcaneRecoverySelection(props.actor) : undefined;
   const systemEntrypointLabel = (system: SystemRuntimeInfo) => {
     const entrypoints = [system.entrypoints?.client ? "client" : undefined, system.entrypoints?.server ? "server" : undefined].filter(Boolean);
@@ -337,21 +425,23 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
         <strong>{activeSystem?.name ?? "No system"}</strong>
       </div>
       <div className="section-title">System Registry</div>
+      {props.systemManagement?.canRegisterSystem && <DeclarativeSystemControls context={props.systemManagement} canManage={props.canInstallSystem} canCreate={props.canCreateActor} />}
       {props.systems.map((system) => (
         <article className="proposal" key={system.id}>
           <span>{system.active ? "active system" : "available system"}</span>
           <h3>{system.name}</h3>
-          <p>Manifest validation: bundled and loadable - v{system.version}</p>
+          <p>{system.source === "api" ? "Installed rules manifest" : "Bundled rules manifest"} - v{system.version}</p>
           <div className="admin-meta">
-            <span>Compendium: {system.id.includes("dnd") ? "SRD entries" : "starter entries"}</span>
+            {system.definition?.kind !== "declarative-v1" && <span>Compendium: {system.id.includes("dnd") ? "SRD entries" : "starter entries"}</span>}
             <span>Core: {system.compatibleCore ?? "unspecified"}</span>
             <span>Entrypoints: {systemEntrypointLabel(system)}</span>
             <span>Schemas: {systemSchemaLabel(system)}</span>
             <span>Permissions: {formatNumber(system.permissions?.length ?? 0)}</span>
-            <span>Migration: no campaign migration required</span>
+            <span>{system.definition?.kind === "declarative-v1" ? "Version changes validate existing character and item data" : "Migration: no campaign migration required"}</span>
             <span>Activation impact: campaign default rules system</span>
           </div>
-          {!system.active && (
+          {system.definition?.kind === "declarative-v1" && props.systemManagement && <DeclarativeSystemControls context={props.systemManagement} system={system} canManage={props.canInstallSystem} canCreate={props.canCreateActor} />}
+          {!system.active && system.definition?.kind !== "declarative-v1" && (
             <button className="ghost-button" onClick={() => props.onInstallSystem(system)} disabled={!props.canInstallSystem}>
               <Plus size={15} /> Activate
             </button>
@@ -375,7 +465,7 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
         <span>Sheet Actor</span>
         <strong>{props.actor?.name ?? "No actor"}</strong>
       </div>
-      <AdvancementFlow actor={props.actor} advancementOptions={props.advancementOptions} advancementGrantsFeat={props.advancementGrantsFeat} advancementFeats={props.advancementFeats} multiclassOptions={props.multiclassOptions} advancementClassName={props.advancementClassName} nextClassLevel={props.nextClassLevel} requiresSubclass={props.requiresSubclass} subclassOptions={props.subclassOptions} weaponMastery={props.weaponMastery} spellAdvancementPaths={props.spellAdvancementPaths} pendingAdvancement={props.pendingAdvancement} onPreviewActor={props.onPreviewActor} onAdvanceActor={props.onAdvanceActor} onCancelPendingAdvancement={props.onCancelPendingAdvancement} canAdvanceActor={props.canAdvanceActor} />
+      {actorUsesBundledRules && <AdvancementFlow actor={props.actor} advancementOptions={props.advancementOptions} advancementGrantsFeat={props.advancementGrantsFeat} advancementFeats={props.advancementFeats} multiclassOptions={props.multiclassOptions} advancementClassName={props.advancementClassName} nextClassLevel={props.nextClassLevel} requiresSubclass={props.requiresSubclass} subclassOptions={props.subclassOptions} weaponMastery={props.weaponMastery} spellAdvancementPaths={props.spellAdvancementPaths} pendingAdvancement={props.pendingAdvancement} onPreviewActor={props.onPreviewActor} onAdvanceActor={props.onAdvanceActor} onCancelPendingAdvancement={props.onCancelPendingAdvancement} canAdvanceActor={props.canAdvanceActor} />}
       <button className="ghost-button wide" onClick={props.onImportCharacter} disabled={!activeSystem || !props.canImportActor}>
         <Upload size={16} /> Import Character
       </button>
@@ -394,7 +484,7 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
           <strong>{props.createdMonster.name}</strong>
         </div>
       )}
-      {props.actor?.systemId === "dnd-5e-srd" ? (
+      {actorUsesBundledRules && (props.actor?.systemId === "dnd-5e-srd" ? (
         <HitDiceRestCard actor={props.actor} canRest={props.canRestActor} onPreviewRest={props.onPreviewRestActor} onRest={props.onRestActor} />
       ) : (
         <>
@@ -410,8 +500,8 @@ export function SdkPanel(props: { plugins: PluginRuntimeInfo[]; systems: SystemR
             <RefreshCw size={16} /> Long Rest
           </button>
         </>
-      )}
-      <button className="primary-button wide" onClick={props.onSystemRoll} disabled={!props.actor || !props.canRollSystem}>
+      ))}
+      <button className="primary-button wide" onClick={actorUsesBundledRules ? props.onSystemRoll : () => { if (props.actor) props.systemManagement?.onOpenActorSheet(props.actor); }} disabled={!props.actor || (actorUsesBundledRules ? !props.canRollSystem : !props.systemManagement)}>
         <ChevronRight size={16} /> {rollLabel}
       </button>
       {installReview && (

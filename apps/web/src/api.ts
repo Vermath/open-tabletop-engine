@@ -1,5 +1,8 @@
-import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AudioTrack, AuditLog, CalculationOverride, Campaign, CampaignMember, CampaignPresence, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, DiceRollFairness, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot, WorldRecord, WorldRelation } from "@open-tabletop/core";
+import type { Actor, AiEvaluationRun, AiMemoryFact, AiThread, AiToolCall, AiUsageMetrics, AudioTrack, AuditLog, CalculationOverride, Campaign, CampaignMember, CampaignPresence, ChatMessage, Combat, ContentImportBatch, DiceMacro, DiceRoll, DiceRollFairness, EmailOutboxMessage, Encounter, FogPreset, Item, JobStatus, JobType, JournalEntry, MapAsset, OrganizationMember, OrganizationMemberRole, OrganizationWorkspace, PermissionName, Proposal, Scene, SystemManifestSchemas, SystemManifestIdentity, DeclarativeSystemDefinition, ScimAssignableRole, ScimGroup, ScimGroupRoleMapping, Token, User, UserRole, UserSession, VisionSnapshot, WorldRecord, WorldRelation } from "@open-tabletop/core";
 import { ApiCompatibilityError, apiBuildFingerprintIssue, apiCompatibilityIssue, type ApiHealthIdentity } from "./api-compatibility.js";
+import type { UniversalVttImportInput, UniversalVttImportResult } from "@open-tabletop/api-contracts";
+
+export type { UniversalVttImportInput, UniversalVttImportResult } from "@open-tabletop/api-contracts";
 
 export { ApiCompatibilityError, apiBuildFingerprintIssue, apiCompatibilityIssue } from "./api-compatibility.js";
 
@@ -327,15 +330,25 @@ export async function confirmPasswordResetSession(input: { token: string; passwo
   return login;
 }
 
+export interface InvitePreviewInfo {
+  invite: CampaignInviteInfo;
+  campaign: Pick<Campaign, "id" | "name" | "description">;
+  expectedUpdatedAt: string;
+}
+
+export async function loadInvitePreview(token: string, options: { signal?: AbortSignal } = {}): Promise<InvitePreviewInfo> {
+  const response = await apiFetch(`${baseUrl}/api/v1/invites/preview?token=${encodeURIComponent(token)}`, {
+    signal: options.signal
+  });
+  if (!response.ok) throw await apiErrorFromResponse(response);
+  return response.json() as Promise<InvitePreviewInfo>;
+}
+
 export async function acceptInviteSession(
   input: { token: string; email: string; displayName?: string; password: string; mfaCode?: string; recoveryCode?: string },
   options: { persist?: boolean; signal?: AbortSignal; idempotencyKey: string }
 ): Promise<InviteAcceptInfo> {
-  const previewResponse = await apiFetch(`${baseUrl}/api/v1/invites/preview?token=${encodeURIComponent(input.token)}`, {
-    signal: options.signal
-  });
-  if (!previewResponse.ok) throw await apiErrorFromResponse(previewResponse);
-  const preview = (await previewResponse.json()) as { expectedUpdatedAt: string };
+  const preview = await loadInvitePreview(input.token, { signal: options.signal });
   const response = await apiFetch(`${baseUrl}/api/v1/invites/accept`, {
     method: "POST",
     headers: { "content-type": "application/json", "idempotency-key": options.idempotencyKey, ...(options.persist === false ? { "x-otte-defer-session-cookie": "1" } : {}) },
@@ -392,10 +405,8 @@ export async function loadOidcConfig(): Promise<OidcConfigInfo> {
 async function ensureSessionToken(): Promise<string> {
   if (statelessDemoApiMode) throw new Error("Demo mode is local-only and cannot call the authenticated API.");
   const token = sessionCredentialToken();
-  const userId = getSessionUserId();
-  if (token) return token;
-  const login = await loginSession(userId);
-  return getSessionToken() || login.token;
+  if (!token) throw new ApiError("Sign in required", 401, { error: "unauthorized", message: "Sign in required" }, "Sign in required");
+  return token;
 }
 
 /** The legacy bearer is private to one upgrade request and never exposed to UI state. */
@@ -567,6 +578,15 @@ export async function apiPost<T>(path: string, body: unknown, options: ApiReques
   });
   if (!response.ok) throw await apiErrorFromResponse(response);
   return response.json() as Promise<T>;
+}
+
+
+export function apiImportUniversalVtt(
+  campaignId: string,
+  input: UniversalVttImportInput,
+  options: ApiRequestOptions & { idempotencyKey: string }
+): Promise<UniversalVttImportResult> {
+  return apiPost<UniversalVttImportResult>(`/api/v1/campaigns/${encodeURIComponent(campaignId)}/scenes/import-universal-vtt`, input, options);
 }
 
 export async function apiAnalyzePdfContentImport(
@@ -1115,15 +1135,15 @@ export interface SystemRuntimeInfo {
     client?: string;
     server?: string;
   };
-  schemas?: {
-    actor?: string;
-    item?: string;
-  };
+  schemas?: SystemManifestSchemas;
   permissions?: PermissionName[];
   capabilities?: string[];
   active: boolean;
   source?: "bundled" | "api";
   dataDriven?: boolean;
+  definition?: DeclarativeSystemDefinition;
+  installedVersions?: SystemManifestIdentity[];
+  binding?: SystemManifestIdentity;
   runtimeCapabilities?: string[];
   unsupportedCapabilities?: string[];
   installedAt?: string;

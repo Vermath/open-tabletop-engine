@@ -17,8 +17,12 @@ describe("guarded tabletop mutation callers", () => {
       body("async function uploadAssetToLibrary", "async function retryAssetUpload"),
       body("async function uploadAudioTrack", "async function toggleAudioTrack"),
     ]) expect(section).toContain("idempotencyKey:");
-    expect(body("async function uploadMap", "async function uploadSelectedTokenImage")).toContain("expectedSceneUpdatedAt: latestScene.updatedAt");
-    expect(body("async function uploadAssetToLibrary", "async function retryAssetUpload")).toContain("expectedSceneUpdatedAt: backgroundScene?.updatedAt");
+    expect(body("async function uploadMap", "async function uploadSelectedTokenImage")).toContain("uploadPreparedSceneMap({ scene: latestScene");
+    expect(body("async function uploadAssetToLibrary", "async function retryAssetUpload")).toContain("uploadPreparedSceneMap({ scene: currentSceneForMutation(backgroundScene)");
+    const preparationSource = readFileSync(resolve(__dirname, "scene-map-preparation.tsx"), "utf8");
+    expect(preparationSource).toContain("expectedUpdatedAt: scene.updatedAt");
+    expect(preparationSource).toContain("idempotencyKey: input.idempotencyKey");
+    expect(preparationSource).toContain('sharedMutationIdempotencyKey(`scene:map-background:${input.asset.id}`, input.scene.updatedAt, payload)');
   });
 
   it("guards asset metadata, lifecycle, fog presets, macros, and audio", () => {

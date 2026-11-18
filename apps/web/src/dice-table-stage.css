@@ -1,0 +1,18 @@
+.dice-table-stage {
+  position: fixed;
+  z-index: 110;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.dice-table-stage .dice-box-stage,
+.dice-table-stage .dice-cast-overlay {
+  position: absolute;
+  inset: 0;
+}
+.dice-table-stage .dice-cast-overlay {
+  justify-content: center;
+  padding-bottom: 0;
+}
+
+.dice-table-stage .dice-cast-static .dice-cast-label { animation: none; }

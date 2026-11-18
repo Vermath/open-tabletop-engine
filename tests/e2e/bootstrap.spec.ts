@@ -74,6 +74,12 @@ async function openManageCategory(page: Page, categoryName: string) {
   return panel;
 }
 
+async function expectCurrentCampaign(page: Page, name: string) {
+  const currentCampaign = page.getByLabel("Current campaign", { exact: true });
+  await expect(currentCampaign).toBeVisible();
+  await expect(currentCampaign).toHaveText(name);
+}
+
 async function openCreateDrawer(root: Locator, label: string) {
   const details = root.locator("details.create-drawer").filter({ hasText: label }).first();
   await expect(details.locator("summary")).toBeVisible();
@@ -98,7 +104,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await page.getByRole("textbox", { name: "Initial campaign name" }).fill("Bootstrap E2E Campaign");
   await page.getByRole("button", { name: "Create" }).click();
 
-  await expect(page.getByRole("heading", { name: "Bootstrap E2E Campaign", level: 1 })).toBeVisible();
+  await expectCurrentCampaign(page, "Bootstrap E2E Campaign");
   let managePanel = await openManageCategory(page, "Campaign");
   await expect(managePanel.getByText("Campaign Settings")).toBeVisible();
   await expect(managePanel.locator(".manage-category-button", { hasText: "Server Admin" })).toBeVisible();
@@ -118,7 +124,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await page.getByRole("textbox", { name: "Login email" }).fill("owner.e2e@example.test");
   await page.getByLabel("Login password").fill("correct horse");
   await page.locator("form").filter({ has: page.getByLabel("Login password") }).getByRole("button", { name: "Login" }).click();
-  await expect(page.getByRole("heading", { name: "Bootstrap E2E Campaign", level: 1 })).toBeVisible();
+  await expectCurrentCampaign(page, "Bootstrap E2E Campaign");
 
   managePanel = await openManageCategory(page, "Account");
   await managePanel.getByLabel("Current password").fill("correct horse");
@@ -142,7 +148,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await expect(page.getByText(/mfa_required|MFA code required/)).toBeVisible();
   await page.getByLabel("Login MFA code").fill(totpCode(mfaSecret));
   await page.locator("form").filter({ has: page.getByLabel("Login password") }).getByRole("button", { name: "Login" }).click();
-  await expect(page.getByRole("heading", { name: "Bootstrap E2E Campaign", level: 1 })).toBeVisible();
+  await expectCurrentCampaign(page, "Bootstrap E2E Campaign");
   managePanel = await openManageCategory(page, "Account");
   await managePanel.getByLabel("MFA password").fill("updated horse");
   await managePanel.getByLabel("MFA code").fill(totpCode(mfaSecret));
@@ -182,7 +188,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await page.getByLabel("New password").fill("reset horse");
   await page.getByLabel("Confirm password").fill("reset horse");
   await page.getByRole("button", { name: "Reset", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Bootstrap E2E Campaign", level: 1 })).toBeVisible();
+  await expectCurrentCampaign(page, "Bootstrap E2E Campaign");
 
   managePanel = await openManageCategory(page, "Account");
   let workspaceSelector = managePanel.getByLabel("Active organization workspace");
@@ -198,15 +204,15 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   await managePanel.getByRole("textbox", { name: "Campaign name", exact: true }).fill("Side Workspace Campaign");
   await managePanel.getByRole("button", { name: "4. Review" }).click();
   await managePanel.getByRole("button", { name: "Create Campaign Setup", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Side Workspace Campaign", level: 1 })).toBeVisible();
+  await expectCurrentCampaign(page, "Side Workspace Campaign");
   managePanel = await openManageCategory(page, "Account");
   workspaceSelector = managePanel.getByLabel("Active organization workspace");
   await expect(workspaceSelector).toContainText("Side Workspace");
   await expect(managePanel.locator(".mini-form-meta")).toContainText("Owner - 1 campaigns");
   await workspaceSelector.selectOption({ label: "Bootstrap Owner's Workspace" });
   await expect(managePanel.locator(".status", { hasText: "Workspace switched to Bootstrap Owner's Workspace" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Bootstrap E2E Campaign", level: 1 })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Side Workspace Campaign", level: 1 })).not.toBeVisible();
+  await expectCurrentCampaign(page, "Bootstrap E2E Campaign");
+  await expect(page.getByLabel("Current campaign", { exact: true })).not.toHaveText("Side Workspace Campaign");
   managePanel = await openManageCategory(page, "People");
   await managePanel.getByRole("textbox", { name: "Invite email", exact: true }).fill("revoked-invite.e2e@example.test");
   await managePanel.getByRole("combobox", { name: "Invite role" }).selectOption("observer");
@@ -220,7 +226,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   workspaceSelector = managePanel.getByLabel("Active organization workspace");
   await workspaceSelector.selectOption({ label: "Side Workspace" });
   await expect(managePanel.locator(".status", { hasText: "Workspace switched to Side Workspace" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Side Workspace Campaign", level: 1 })).toBeVisible();
+  await expectCurrentCampaign(page, "Side Workspace Campaign");
   managePanel = await openManageCategory(page, "People");
   await expect(organizationInviteRoster).not.toContainText("revoked-invite.e2e@example.test");
   await managePanel.getByRole("textbox", { name: "Invite email", exact: true }).fill("side-invite.e2e@example.test");
@@ -232,7 +238,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   workspaceSelector = managePanel.getByLabel("Active organization workspace");
   await workspaceSelector.selectOption({ label: "Bootstrap Owner's Workspace" });
   await expect(managePanel.locator(".status", { hasText: "Workspace switched to Bootstrap Owner's Workspace" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Bootstrap E2E Campaign", level: 1 })).toBeVisible();
+  await expectCurrentCampaign(page, "Bootstrap E2E Campaign");
   managePanel = await openManageCategory(page, "People");
   await expect(organizationInviteRoster).not.toContainText("side-invite.e2e@example.test");
   const memberRegister = await request.post(`${apiBaseUrl}/api/v1/auth/register`, {
@@ -573,7 +579,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   workspaceSelector = managePanel.getByLabel("Active organization workspace");
   await workspaceSelector.selectOption({ label: "Side Workspace" });
   await expect(managePanel.locator(".status", { hasText: "Workspace switched to Side Workspace" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Side Workspace Campaign", level: 1 })).toBeVisible();
+  await expectCurrentCampaign(page, "Side Workspace Campaign");
   managePanel = await openManageCategory(page, "Server Admin");
   await expect(orgMemberCard).toHaveCount(0);
   await organizationMembers.getByRole("textbox", { name: "Organization member email" }).fill("side-member.e2e@example.test");
@@ -586,7 +592,7 @@ test("clean deployment routes to owner bootstrap and opens the starter campaign"
   workspaceSelector = managePanel.getByLabel("Active organization workspace");
   await workspaceSelector.selectOption({ label: "Bootstrap Owner's Workspace" });
   await expect(managePanel.locator(".status", { hasText: "Workspace switched to Bootstrap Owner's Workspace" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Bootstrap E2E Campaign", level: 1 })).toBeVisible();
+  await expectCurrentCampaign(page, "Bootstrap E2E Campaign");
   managePanel = await openManageCategory(page, "Server Admin");
   await expect(sideMemberCard).toHaveCount(0);
   await expect(orgMemberCard).toBeVisible();

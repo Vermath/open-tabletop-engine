@@ -4,6 +4,7 @@ import {
   createId,
   nowIso,
   type AuditLog,
+  type Campaign,
   type CampaignArchive,
   type CampaignArchiveImportAssetInverseStep,
   type CampaignArchiveImportOperation,
@@ -15,6 +16,8 @@ import {
 import type { ArchiveAssetRestoreTransaction } from "./archive-asset-restore.js";
 import type { AssetStorage } from "./asset-storage.js";
 import type { StateStore } from "./store.js";
+import { assertDeclarativeSystemRecord, assertDeclarativeSystemStateCandidate, DeclarativeSystemStateError } from "./declarative-system-state.js";
+import { advanceImportedDeclarativeBindingRevisions } from "./declarative-system-host.js";
 
 export interface CampaignArchiveImportOperationSummary {
   id: string;
@@ -438,6 +441,7 @@ function stateForCampaignArchiveImportRollback(
       updatedAt: appliedAt,
     } satisfies AuditLog);
   }
+  advanceImportedDeclarativeBindingRevisions(state, next, nextRevisionTimestamp);
   return next;
 }
 
@@ -447,6 +451,13 @@ function addReferenceConflicts(state: EngineState, decisions: RecordDecision[]):
       .filter((decision) => decision.outcome === "apply" && decision.step.action === "delete")
       .map((decision) => [`${String(decision.step.collection)}:${decision.step.id}`, decision]),
   );
+  const campaignRuleRestores = new Map(decisions.filter((decision) => {
+    if (decision.step.collection !== "campaigns" || decision.step.action !== "restore") return false;
+    const current = state.campaigns.find((campaign) => campaign.id === decision.step.id);
+    const restored = decision.step.before as Campaign | undefined;
+    return restored && (current?.defaultSystemId !== restored.defaultSystemId
+      || !isDeepStrictEqual(current?.systemBindings ?? [], restored.systemBindings ?? []));
+  }).map((decision) => [decision.step.id, decision]));
   let changed = true;
   while (changed) {
     changed = false;
@@ -457,6 +468,46 @@ function addReferenceConflicts(state: EngineState, decisions: RecordDecision[]):
       decision.outcome = "conflict";
       decision.reason = "reference_conflict";
       changed = true;
+    }
+    if (changed) continue;
+    for (const [campaignId, decision] of campaignRuleRestores) {
+      if (decision.outcome !== "apply") continue;
+      const scopedCandidate = {
+        campaigns: candidate.campaigns.filter((campaign) => campaign.id === campaignId),
+        actors: candidate.actors.filter((actor) => actor.campaignId === campaignId),
+        items: candidate.items.filter((item) => item.campaignId === campaignId),
+        systemInstallations: candidate.systemInstallations,
+      };
+      try {
+        // Use the final surviving records on both sides to isolate the effect
+        // of restoring this campaign's pins/default, including empty campaigns.
+        assertDeclarativeSystemStateCandidate({
+          ...scopedCandidate,
+          campaigns: state.campaigns.filter((campaign) => campaign.id === campaignId),
+        }, scopedCandidate);
+      } catch (error) {
+        if (!(error instanceof DeclarativeSystemStateError)) throw error;
+        decision.outcome = "conflict";
+        decision.reason = "reference_conflict";
+        changed = true;
+      }
+    }
+    if (changed) continue;
+    for (const decision of decisions) {
+      const collection = decision.step.collection;
+      if (decision.outcome !== "apply" || decision.step.action !== "restore" || (collection !== "actors" && collection !== "items")) continue;
+      const restored = candidate[collection].find((record) => record.id === decision.step.id);
+      if (!restored || campaignRuleRestores.get(restored.campaignId)?.outcome !== "conflict") continue;
+      try {
+        // A blocked campaign restore retains the current pin. Old actor/item
+        // data must still fit that pin before it can be an independent safe step.
+        assertDeclarativeSystemRecord(candidate, collection, restored);
+      } catch (error) {
+        if (!(error instanceof DeclarativeSystemStateError)) throw error;
+        decision.outcome = "conflict";
+        decision.reason = "reference_conflict";
+        changed = true;
+      }
     }
   }
 }

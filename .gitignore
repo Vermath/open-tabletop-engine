@@ -28,3 +28,6 @@ apps/web/public/assets/dice-box/
 
 # Test/e2e output artifacts
 output/
+
+# Production build used only by `pnpm perf:board`
+apps/web/.perf-dist/

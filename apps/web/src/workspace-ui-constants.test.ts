@@ -19,5 +19,7 @@ describe("workspace inspector tab availability", () => {
   it("documents the keyboard-complete board gesture model", () => {
     expect(keyboardShortcutRows).toContainEqual({ keys: "Arrow keys", label: "Move a focused token or position the active board tool" });
     expect(keyboardShortcutRows).toContainEqual({ keys: "Enter / Space", label: "Start or finish a keyboard board gesture" });
+    expect(keyboardShortcutRows).toContainEqual({ keys: "Scroll", label: "Zoom the map at the pointer" });
+    expect(keyboardShortcutRows.map((row) => row.keys)).not.toContain("Ctrl+Scroll");
   });
 });

@@ -6,7 +6,7 @@ export default defineConfig({
     name: "api-intentional-timeout-diagnostic",
     include: [diagnosticFixtureTestFile],
     pool: "forks",
-    poolOptions: { forks: { singleFork: true } },
+    maxWorkers: 1,
     setupFiles: ["src/vitest.setup.ts"],
     retry: 0,
     testTimeout: 3_000

@@ -24,7 +24,7 @@ OpenTabletop is now a **locally qualified private-alpha candidate**: the final r
 | Stage | Current disposition |
 |---|---|
 | Internal engineering build | **Locally qualified.** The clean repository gate, aggregate/default browser suite, clean bootstrap, canonical restart journey, and full Level 3 combat journey are green on the same working tree. |
-| Private alpha | Still requires X01 repeated real GM/player sessions, X03 an independent non-no-op hosted state-plus-asset restore, and X02 only if enterprise identity is advertised. |
+| Private alpha | Requires X03 independent non-no-op hosted state-plus-asset restore and X02 when enterprise identity is advertised. X01 session capture was retired on 2026-11-17. |
 | Public beta | Still requires X04 physical assistive-technology/device evidence, X05 hosted operating drills, X06 content/legal approval, X07 independent security review, and X08 provider/AI quality evidence if AI is offered. |
 
 The correct claim is therefore **code-complete for the reviewed remediation scope, locally validated, and externally evidence-gated**. Historical tables below describe what was found, not what remains open.
@@ -39,7 +39,7 @@ The correct claim is therefore **code-complete for the reviewed remediation scop
 | Full Level 3 combat | Green 1/1: generated map, four legal Level 3 sheets, encounter placement, R-04 coverage, combat completion, and continuity evidence. |
 | Documentation and diff hygiene | Documentation site check and `git diff --check` are required at handoff and recorded in the final validation summary. |
 
-This evidence qualifies the local tree only. The tranche remains uncommitted, undeployed, and not independently reviewed; X01-X08 retain the release boundaries above.
+This evidence qualifies the local tree only. The tranche remains uncommitted, undeployed, and not independently reviewed; X02-X08 retain the release boundaries above.
 
 ## 2026-07-16 working-tree addendum (authoritative)
 
