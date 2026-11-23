@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/ubi-minimal:9.9@sha256:baafce2d34783a28b4a472779f304e97e00f9d35c99553bc53b068b14344d9a9 AS fetch
+FROM --platform=$BUILDPLATFORM registry.access.redhat.com/ubi9/ubi-minimal:9.9@sha256:08d4c70f1baf6537a0728656cf7942d561e74a35916509d205b6519861266352 AS fetch
 ARG TARGETARCH
 WORKDIR /verified
 # These release binaries and their sidecars also shipped in the previous MinIO image.
@@ -16,7 +16,7 @@ RUN set -eu; \
 COPY minio-checksums/${TARGETARCH}.sha256 /tmp/release.sha256
 RUN sha256sum --strict --check /tmp/release.sha256 && chmod 0755 minio mc
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.9@sha256:baafce2d34783a28b4a472779f304e97e00f9d35c99553bc53b068b14344d9a9
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.9@sha256:08d4c70f1baf6537a0728656cf7942d561e74a35916509d205b6519861266352
 COPY --from=fetch /verified/ /usr/bin/
 ADD --checksum=sha256:c6a01decb5d104ef7327d0d642ce34bcc2396e600a1b7ba03568ac65b3d473be --chmod=0755 https://raw.githubusercontent.com/minio/minio/0d7408fc9969caf07de6a8c3a84f9fbb10a6739e/dockerscripts/docker-entrypoint.sh /usr/bin/docker-entrypoint.sh
 ADD --checksum=sha256:0d96a4ff68ad6d4b6f1f30f713b18d5184912ba8dd389f86aa7710db079abcb0 --chmod=0644 https://raw.githubusercontent.com/minio/minio/0d7408fc9969caf07de6a8c3a84f9fbb10a6739e/LICENSE /licenses/LICENSE
