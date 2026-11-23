@@ -65,7 +65,7 @@ jobs:
 
       - name: Upload failed browser traces
         if: failure() && steps.journeys.outcome == 'failure'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: failed-browser-traces
           path: test-results/**/trace.zip
@@ -83,7 +83,7 @@ jobs:
 
       - name: Upload release gate evidence
         if: ${{ !cancelled() && matrix.stage == 'checks' && (steps.checks.outcome == 'success' || hashFiles('artifacts/release-evidence/*.json') != '') }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: open-tabletop-release-gate-evidence
           path: artifacts/release-evidence/*.json
@@ -91,7 +91,7 @@ jobs:
 
       - name: Upload API service SBOM
         if: steps.packages.outcome == 'success'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: open-tabletop-api-sbom
           path: |
