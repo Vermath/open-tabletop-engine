@@ -55,11 +55,11 @@
     "check": "pnpm lint && pnpm typecheck && pnpm e2e:typecheck && pnpm test && pnpm build"
   },
   "devDependencies": {
-    "@playwright/test": "^1.63.0",
-    "@types/node": "^26.6.4",
-    "prettier": "^3.9.9",
+    "@playwright/test": "^1.65.1",
+    "@types/node": "^26.6.6",
+    "prettier": "^3.10.1",
     "tsx": "^4.23.15",
-    "turbo": "^2.11.7",
+    "turbo": "^2.11.13",
     "typescript": "^7.0.2"
   }
 }
